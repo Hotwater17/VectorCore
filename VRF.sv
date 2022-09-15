@@ -127,18 +127,18 @@ generate
         (
             .AA(wr_addr_i),
             .D(wdata_i),
-            .BWEB(0), //Bit-write enable
+            .BWEB(32'h0000_0000), //Bit-write enable
             .WEB(rf_wr_en[iBank]),
             .CLKW(clk_i),
             .AB(rf_rd_addr),
             .REB(rf_rd_en),
             .CLKR(clk_i),
             //BIST 
-            .AMA(5'b0),
-            .DM(32'b1),
-            .BWEBM(32'b1),
+            .AMA(5'b00000),
+            .DM(32'h1111_1111),
+            .BWEBM(32'h1111_1111),
             .WEBM(1'b1),
-            .AMB(5'b0),
+            .AMB(5'b00000),
             .REBM(1'b1),
             .BIST(1'b0),
             .Q(rf_rdata[iBank])
@@ -159,6 +159,7 @@ generate
     end
 
     always_comb begin : wr_en
+        //Try changing this to also include next state == WR_EN
         rf_wr_en[iBank]   =   !(wr_en_i && (wr_elem_cnt_i == iBank) && (wr_this_state == WR_EN));
     end
 
