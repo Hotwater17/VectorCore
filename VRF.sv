@@ -35,6 +35,7 @@ module VRF #(
     output  reg [DATA_WIDTH-1:0]    b_rdata_o,
     output  reg [DATA_WIDTH-1:0]    c_rdata_o,
 
+    input                           is_mask_used_i,
     output      [DATA_WIDTH-1:0]    mask_rdata_o
 
 );

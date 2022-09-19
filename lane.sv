@@ -10,7 +10,7 @@ module lane import vect_pkg::*; #(
     localparam RD_PIPE_STAGES       =   3,
     localparam RD_PIPE_B            =   $clog2(RD_PIPE_STAGES),
 
-    localparam EXE_PIPE_STAGES      =   3,
+    localparam EXE_PIPE_STAGES      =   1,
     localparam EXE_PIPE_B           =   $clog2(EXE_PIPE_STAGES)
 )(
 
@@ -84,24 +84,24 @@ module lane import vect_pkg::*; #(
 
 
     logic                       ext_reg_wr_en;
-    logic   [DATA_WIDTH-1:0]    ext_vs1_rdata_req_q;
+    logic   [DATA_WIDTH-1:0]    ext_vs1_rdata_reg_q;
     logic   [DATA_WIDTH-1:0]    ext_vs2_rdata_reg_q;
     logic   [DATA_WIDTH-1:0]    ext_vs3_rdata_reg_q;
 
-
+    logic                       vrf_wr_req;
     logic                       vrf_rd_req;
-    logic                       vrf_reg_wr_en;
-    logic   [DATA_WIDTH-1:0]    vrf_vs1_rdata_reg_q;
-    logic   [DATA_WIDTH-1:0]    vrf_vs2_rdata_reg_q;
-    logic   [DATA_WIDTH-1:0]    vrf_vs3_rdata_reg_q;
-    logic   [DATA_WIDTH-1:0]    vrf_mask_rdata_reg_q;
+    logic                       is_c_used;
+    logic                       vrf_wr_ready;
+    logic                       vrf_rd_op_ready;
+    
 
     logic   [DATA_WIDTH-1:0]    rs1_rdata_reg_q;
 
     logic   [DATA_WIDTH-1:0]    mask_wb;
+    logic                       is_mask_used;
 
-    logic [1:0]   write_elem_cnt;
-    logic [1:0]   read_elem_cnt;
+    logic [1:0]                 lane_vd_elem_cnt;
+    logic [1:0]                 lane_vs_elem_cnt;
 
     enum logic [1:0] {ST_IDLE, ST_READ_ARG, ST_EXE, ST_WB} lane_this_state, lane_next_state;
 
@@ -112,10 +112,10 @@ module lane import vect_pkg::*; #(
 
     assign instr_valid_decoded  =   (instr_running.opcode == VARITH);
 
-    assign mask_bits_o          =   vrf_mask_rdata_reg_q;
+    assign mask_bits_o          =   vrf_mask_rdata;
 
 
-    assign ready_o  =   ((lane_next_state == ST_IDLE) && (lane_this_state == ST_WB));
+    assign ready_o      =   ((lane_next_state == ST_IDLE) && (lane_this_state == ST_WB));
 
   ///////////////////////
   // Slide unit selection          
@@ -128,12 +128,16 @@ module lane import vect_pkg::*; #(
     assign is_op_lsu    =   (instr_running.opcode inside {VLOAD, VSTORE});
     assign is_op_red    =   ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VREDOR, VRSUB_VREDXOR
                             , VMINU_VREDMINU, VMIN_VREDMIN, VMAXU_VREDMAXU, VMAX_VREDMAX}) && (instr_running.funct3 == OPMVV));
+    assign is_c_used    =   (instr_running.funct3 inside {VSRA_VMADD, VSSRA_VNMSUB, VNSRA_VMACC, VNCLIP_VNMSAC} && (instr_running.funct3 == OPMVV));
 
+    assign is_mask_used =   ~instr_running.vm;   
 
-    assign alu_b        =   vrf_vs2_rdata_reg_q;
-    assign alu_c        =   vrf_vs3_rdata_reg_q;
+    assign alu_b        =   vrf_vs2_rdata;
+    assign alu_c        =   vrf_vs3_rdata;
     assign alu_mask_en  =   ((mask_bits_i[vrf_vd_elem_cnt] && (~instr_running.vm)) || instr_running.vm);
-    assign alu_valid    =   (lane_this_state == ST_EXE) && is_op_alu;
+    
+    assign alu_valid    =   is_op_alu;
+    //assign alu_valid    =   (lane_this_state == ST_EXE) && is_op_alu;
 
  
   ///////////////////////
@@ -142,39 +146,22 @@ module lane import vect_pkg::*; #(
 
 always_ff @(posedge clk_i or negedge resetn_i) begin : extArgPipe
     if(!resetn_i) begin
-        ext_vs1_rdata_req_q <= 0;
+        ext_vs1_rdata_reg_q <= 0;
         ext_vs2_rdata_reg_q <= 0;
         ext_vs3_rdata_reg_q <= 0;
     end
     else if(ext_reg_wr_en) begin
-        ext_vs1_rdata_req_q <= vrf_vs1_rdata;
+        ext_vs1_rdata_reg_q <= vrf_vs1_rdata;
         ext_vs2_rdata_reg_q <= vrf_vs2_rdata;
         ext_vs3_rdata_reg_q <= vrf_vs3_rdata;
     end
 end
     assign ext_reg_wr_en    =   is_op_lsu || is_op_sldu;
-    assign ext_vs1_rdata_o  =   ext_vs1_rdata_req_q;
+    assign ext_vs1_rdata_o  =   ext_vs1_rdata_reg_q;
     assign ext_vs2_rdata_o  =   ext_vs2_rdata_reg_q;
     assign ext_vs3_rdata_o  =   ext_vs3_rdata_reg_q;
 
-  ///////////////////////
-  // VRF pipeline regs          
-  ///////////////////////
 
-always_ff @(posedge clk_i or negedge resetn_i) begin : vrfArgPipe
-    if(!resetn_i) begin
-        vrf_vs1_rdata_reg_q <= 0;
-        vrf_vs2_rdata_reg_q <= 0;
-        vrf_vs3_rdata_reg_q <= 0;
-        vrf_mask_rdata_reg_q <= 0;
-    end
-    else if(vrf_reg_wr_en) begin
-        vrf_vs1_rdata_reg_q <= vrf_vs1_rdata;
-        vrf_vs2_rdata_reg_q <= vrf_vs2_rdata;
-        vrf_vs3_rdata_reg_q <= vrf_vs3_rdata;
-        vrf_mask_rdata_reg_q <= vrf_mask_rdata;
-    end
-end
 
 always_ff @(posedge clk_i or negedge resetn_i) begin : rs1Pipe
     if(!resetn_i) begin
@@ -185,8 +172,11 @@ always_ff @(posedge clk_i or negedge resetn_i) begin : rs1Pipe
     end
 end
     assign vrf_reg_wr_en    =   (lane_this_state == ST_WB);
-    assign vrf_rd_req       =   (lane_this_state == ST_READ_ARG);
+    //assign vrf_rd_req       =   (lane_this_state == ST_READ_ARG);
 
+    assign vrf_wr_req       =   ((lane_this_state == ST_EXE) && (lane_next_state == ST_WB));
+    assign vrf_rd_req       =   instr_req_i;
+    assign vrf_wr_ready     =   ((lane_this_state == ST_WB) && (lane_next_state == ST_IDLE));
 
   ///////////////////////
   // Address swap          
@@ -196,7 +186,7 @@ always_comb begin : argAddr
 
     vrf_vs1_addr    =   (instr_running.funct3 inside {OPIVV, OPMVV}) ? instr_running.vs1_rs1_imm : 5'b00000;
     vrf_vd_addr     =   instr_running.vd_rd_vs3;
-    if(instr_running.funct6 inside {VSRA_VMADD, VSSRA_VNMSUB}) begin
+    if((instr_running.funct6 inside {VSRA_VMADD, VSSRA_VNMSUB}) && (alu_op_type == MULT)) begin
         //Change the order of VS3(C) and VS2(B)
         vrf_vs2_addr = instr_running.vd_rd_vs3; 
         vrf_vs3_addr = instr_running.vs2;
@@ -212,10 +202,10 @@ end
 
 always_comb begin : argVectScalImm
     unique case (instr_running.funct3)
-        OPIVV,OPMVV :   alu_a   =   vrf_vs1_rdata_reg_q;
+        OPIVV,OPMVV :   alu_a   =   vrf_vs1_rdata;
         OPIVX,OPMVX :   alu_a   =   rs1_rdata_i;
         OPIVI       :   alu_a   =   {{(DATA_WIDTH-5){1'b0}}, instr_running.vs1_rs1_imm};
-        default     :   alu_a   =   vrf_vs1_rdata_reg_q;
+        default     :   alu_a   =   vrf_vs1_rdata;
     endcase
 end
 
@@ -245,8 +235,8 @@ always_comb begin : elemCntSel
     end
 
     else begin
-        vrf_vs_elem_cnt = read_elem_cnt;
-        vrf_vd_elem_cnt = write_elem_cnt;
+        vrf_vs_elem_cnt = lane_vs_elem_cnt;
+        vrf_vd_elem_cnt = lane_vd_elem_cnt;
         vrf_vd_wr_en    = (alu_mask_en && (lane_this_state == ST_WB));
     end
 end
@@ -270,6 +260,8 @@ ALU #(
     .alu_q_o(alu_result)
 );
 
+
+
   ///////////////////////
   // Register file          
   ///////////////////////
@@ -279,16 +271,23 @@ VRF RF(
     .resetn_i(resetn_i),
     .a_addr_i(vrf_vs1_addr),
     .b_addr_i(vrf_vs2_addr),
+    .c_addr_i(vrf_vs3_addr),
     .wr_addr_i(vrf_vd_addr),     
     .rd_elem_cnt_i(vrf_vs_elem_cnt),
     .wr_elem_cnt_i(vrf_vd_elem_cnt),
+    .wr_req_i(vrf_wr_req),
     .wr_en_i(vrf_vd_wr_en),
+    .wr_ready_i(vrf_wr_ready),
     .wdata_i(vrf_vd_wdata),
     .rd_req_i(vrf_rd_req),
+    .is_c_used_i(is_c_used),
+    .rd_op_ready_o(vrf_rd_op_ready),
     .a_rdata_o(vrf_vs1_rdata),
     .b_rdata_o(vrf_vs2_rdata),
-    .mask_rdata_o()
-
+    .c_rdata_o(vrf_vs3_rdata),
+    .is_mask_used_i(is_mask_used),
+    .mask_rdata_o(vrf_mask_rdata)  
+    
 );
 
 
@@ -306,14 +305,18 @@ end
 
 always_comb begin : laneStateLogic
     unique case(lane_this_state) 
-        ST_IDLE     :   lane_next_state = (instr_req_i) ? ST_READ_ARG : ST_IDLE;
-        ST_READ_ARG :   lane_next_state = (read_pipe_cnt == 0) ? (is_op_piped ? ST_EXE : ST_WB): ST_READ_ARG;
-        ST_EXE      :   lane_next_state = (exe_pipe_cnt == 0) ? ST_WB : ST_EXE;
-        ST_WB       :   lane_next_state = (write_elem_cnt == LANES-1) ? ST_IDLE : ST_WB;
-        default     :   lane_next_state = ST_IDLE;
+        ST_IDLE     :   lane_next_state =   instr_req_i                     ?   ST_READ_ARG :   ST_IDLE;
+        //ST_READ_ARG :   lane_next_state = (read_pipe_cnt == 0) ? (is_op_piped ? ST_EXE : ST_WB): ST_READ_ARG;
+        ST_READ_ARG :   lane_next_state =   vrf_rd_op_ready                 ?   ST_EXE      :   ST_READ_ARG;
+        ST_EXE      :   lane_next_state =   (exe_pipe_cnt == 0)             ?   ST_WB       :   ST_EXE;
+        ST_WB       :   lane_next_state =   (lane_vd_elem_cnt == LANES-1)   ?   ST_IDLE     :   ST_WB;
+        default     :   lane_next_state =   ST_IDLE;
 
     endcase
 end
+    //ST_READ_ARG: goto exe when rd_ready is set
+    //ST_EXE: goto wb when pipeline cnt is 0 
+    //ST_WB: goto idle when all elements from write are ready(set wr_ready also)
 
 
 
@@ -325,45 +328,45 @@ end
 
 always_ff @(posedge clk_i or negedge resetn_i) begin : elemCntFF
     if(!resetn_i) begin 
-        read_elem_cnt   <=  0;
-        write_elem_cnt  <=  0;
-        read_pipe_cnt   <=  0;
-        exe_pipe_cnt    <=  0;
+        lane_vs_elem_cnt    <=  0;
+        lane_vd_elem_cnt    <=  0;
+        read_pipe_cnt       <=  0;
+        exe_pipe_cnt        <=  0;
     end
     else begin
         unique case(lane_this_state)
             ST_IDLE      :   begin 
-                read_elem_cnt   <=  0;
-                write_elem_cnt  <=  0;
-                read_pipe_cnt   <=  RD_PIPE_STAGES-1; //was 2
-                exe_pipe_cnt    <=  0; 
+                lane_vs_elem_cnt    <=  0;
+                lane_vd_elem_cnt    <=  0;
+                read_pipe_cnt       <=  RD_PIPE_STAGES-1; //was 2
+                exe_pipe_cnt        <=  0; 
                 //2 cycles for argument readocalplocalparam EXE_PIPE_STAGES = 3
             end
             ST_READ_ARG  :   begin 
-                read_elem_cnt   <=  0;
-                write_elem_cnt  <=  write_elem_cnt;
-                read_pipe_cnt   <=  (read_pipe_cnt > 0) ? read_pipe_cnt - 1 : read_pipe_cnt;
+                lane_vs_elem_cnt    <=  0;
+                lane_vd_elem_cnt    <=  lane_vd_elem_cnt;
+                read_pipe_cnt       <=  (read_pipe_cnt > 0) ? read_pipe_cnt - 1 : read_pipe_cnt;
                 //Here - depending on the operation - either normal ALU or pipelined mul/div.
-                exe_pipe_cnt    <=  EXE_PIPE_STAGES-1; 
+                exe_pipe_cnt        <=  EXE_PIPE_STAGES-1; 
             end
             ST_EXE       :   begin 
-                read_elem_cnt   <=  read_elem_cnt + 1;
-                write_elem_cnt  <=  0;
-                read_pipe_cnt   <=  0;
-                exe_pipe_cnt    <=  (exe_pipe_cnt > 0) ? exe_pipe_cnt-1 : exe_pipe_cnt; 
+                lane_vs_elem_cnt    <=  lane_vs_elem_cnt + 1;
+                lane_vd_elem_cnt    <=  0;
+                read_pipe_cnt       <=  0;
+                exe_pipe_cnt        <=  (exe_pipe_cnt > 0) ? exe_pipe_cnt-1 : exe_pipe_cnt; 
             end
             ST_WB        :   begin
                 //Maybe here?
-                read_elem_cnt   <=  read_elem_cnt + 1;
-                write_elem_cnt  <=  write_elem_cnt + 1;
-                read_pipe_cnt   <=  0;  
-                exe_pipe_cnt    <=  exe_pipe_cnt;               
+                lane_vs_elem_cnt    <=  lane_vs_elem_cnt + 1;
+                lane_vd_elem_cnt    <=  lane_vd_elem_cnt + 1;
+                read_pipe_cnt       <=  0;  
+                exe_pipe_cnt        <=  exe_pipe_cnt;               
             end
             default         :   begin
-                read_elem_cnt   <=  0;
-                write_elem_cnt  <=  0;
-                read_pipe_cnt   <=  0;
-                exe_pipe_cnt    <=  0; 
+                lane_vs_elem_cnt    <=  0;
+                lane_vd_elem_cnt    <=  0;
+                read_pipe_cnt       <=  0;
+                exe_pipe_cnt        <=  0; 
             end 
         endcase
     end
