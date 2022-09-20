@@ -128,7 +128,7 @@ module lane import vect_pkg::*; #(
     assign is_op_lsu    =   (instr_running.opcode inside {VLOAD, VSTORE});
     assign is_op_red    =   ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VREDOR, VRSUB_VREDXOR
                             , VMINU_VREDMINU, VMIN_VREDMIN, VMAXU_VREDMAXU, VMAX_VREDMAX}) && (instr_running.funct3 == OPMVV));
-    assign is_c_used    =   (instr_running.funct3 inside {VSRA_VMADD, VSSRA_VNMSUB, VNSRA_VMACC, VNCLIP_VNMSAC} && (instr_running.funct3 == OPMVV));
+    assign is_c_used    =   (instr_running.funct6 inside {VSRA_VMADD, VSSRA_VNMSUB, VNSRA_VMACC, VNCLIP_VNMSAC} && (instr_running.funct3 == OPMVV));
 
     assign is_mask_used =   ~instr_running.vm;   
 

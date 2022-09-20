@@ -145,7 +145,7 @@ generate
             .Q(rf_rdata[iBank])
         );
 
-
+/*
     always_ff @(posedge clk_i or negedge resetn_i) begin : reg_FF
         if(!resetn_i) begin
             a_reg[iBank]  <=  '0;
@@ -157,6 +157,21 @@ generate
             if(b_rd_en)   b_reg[iBank]  <=  rf_rdata[iBank];
             if(c_rd_en)   c_reg[iBank]  <=  rf_rdata[iBank];
         end
+    end
+*/
+
+    always_latch  begin : reg_latch
+        if(!resetn_i) begin
+            a_reg[iBank]  <=  '0;
+            b_reg[iBank]  <=  '0;
+            c_reg[iBank]  <=  '0;
+        end
+        else begin
+            if(a_rd_en)   a_reg[iBank]  <=  rf_rdata[iBank];
+            if(b_rd_en)   b_reg[iBank]  <=  rf_rdata[iBank];
+            if(c_rd_en)   c_reg[iBank]  <=  rf_rdata[iBank];
+        end
+
     end
 
     always_comb begin : wr_en
