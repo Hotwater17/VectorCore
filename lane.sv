@@ -3,6 +3,7 @@ module lane import vect_pkg::*; #(
     parameter REG_NUM       =   32,
     parameter VLEN          =   512,
     parameter LANES         =   4,
+    parameter PIPE_ST       =   3,
 
     localparam ELEM_B               =   $clog2(LANES),
     localparam ADDR_B               =   $clog2(REG_NUM),
@@ -10,7 +11,7 @@ module lane import vect_pkg::*; #(
     localparam RD_PIPE_STAGES       =   3,
     localparam RD_PIPE_B            =   $clog2(RD_PIPE_STAGES),
 
-    localparam EXE_PIPE_STAGES      =   1,
+    localparam EXE_PIPE_STAGES      =   PIPE_ST,
     localparam EXE_PIPE_B           =   $clog2(EXE_PIPE_STAGES)
 )(
 
@@ -246,7 +247,8 @@ end
   ///////////////////////
 
 ALU #(
-    .DATA_WIDTH(DATA_WIDTH)
+    .DATA_WIDTH(DATA_WIDTH),
+    .PIPE_ST(PIPE_ST)
 ) valu(
     .clk_i(clk_i),
     .resetn_i(resetn_i),
@@ -338,6 +340,7 @@ always_ff @(posedge clk_i or negedge resetn_i) begin : elemCntFF
             ST_IDLE      :   begin 
                 lane_vs_elem_cnt    <=  0;
                 lane_vd_elem_cnt    <=  0;
+                //Wait one more if 
                 read_pipe_cnt       <=  RD_PIPE_STAGES-1; //was 2
                 exe_pipe_cnt        <=  0; 
                 //2 cycles for argument readocalplocalparam EXE_PIPE_STAGES = 3

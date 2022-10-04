@@ -6,6 +6,7 @@ tcbn65lp.v
 top_pad.sv
 AHB_template.sv
 VRF.sv.backup
+testalu.sv
 4Lanes/
 unused/
 ScalarOld/
