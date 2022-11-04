@@ -3,16 +3,15 @@ module lane import vect_pkg::*; #(
     parameter REG_NUM       =   32,
     parameter VLEN          =   512,
     parameter LANES         =   4,
-    parameter PIPE_ST       =   3,
+    parameter PIPE_ST       =   4,
 
     localparam ELEM_B               =   $clog2(LANES),
     localparam ADDR_B               =   $clog2(REG_NUM),
 
-    localparam RD_PIPE_STAGES       =   3,
-    localparam RD_PIPE_B            =   $clog2(RD_PIPE_STAGES),
-
     localparam EXE_PIPE_STAGES      =   PIPE_ST,
-    localparam EXE_PIPE_B           =   $clog2(EXE_PIPE_STAGES)
+    localparam EXE_PIPE_B           =   $clog2(EXE_PIPE_STAGES),
+
+    localparam MASK_LANE_B          =   VLEN/(LANES*DATA_WIDTH)
 )(
 
     input                       clk_i,
@@ -28,7 +27,7 @@ module lane import vect_pkg::*; #(
 
 
     //Mask interface
-    input   [(VLEN/(LANES*DATA_WIDTH))-1:0]        mask_bits_i,
+    input   [MASK_LANE_B-1:0]   mask_bits_i,
     output  [DATA_WIDTH-1:0]    mask_bits_o,
     //Scalar interface
     input   [DATA_WIDTH-1:0]    rs1_rdata_i,
@@ -58,15 +57,18 @@ module lane import vect_pkg::*; #(
     logic                       alu_valid;
     logic                       alu_op_type;
 
+    logic                       is_op_mul;
+    logic                       is_op_div;
     logic                       is_op_alu;
     logic                       is_op_sldu;
     logic                       is_op_lsu;
     logic                       is_op_red;
     logic                       is_op_piped;
     logic   [DATA_WIDTH-1:0]    sldu_result;
-    logic                       instr_valid_decoded;
-    logic   [RD_PIPE_B-1:0]     read_pipe_cnt;
     logic   [EXE_PIPE_B-1:0]    exe_pipe_cnt;
+
+    logic                       mul_ready;
+    logic                       alu_ready;
 
     logic   [ADDR_B-1:0]        vrf_vs1_addr;
     logic   [ADDR_B-1:0]        vrf_vs2_addr;
@@ -100,28 +102,35 @@ module lane import vect_pkg::*; #(
 
     logic   [DATA_WIDTH-1:0]    mask_wb;
     logic                       is_mask_used;
+    
 
     logic [1:0]                 lane_vd_elem_cnt;
     logic [1:0]                 lane_vs_elem_cnt;
 
+
     enum logic [1:0] {ST_IDLE, ST_READ_ARG, ST_EXE, ST_WB} lane_this_state, lane_next_state;
 
+  ///////////////////////
+  // Instruction register          
+  ///////////////////////
+    
     always_ff @(posedge clk_i or negedge resetn_i) begin : instrFF
         if(!resetn_i)           instr_running   <=  '0;
         else if(instr_req_i)    instr_running   <=  instr_i;
     end
 
-    assign instr_valid_decoded  =   (instr_running.opcode == VARITH);
 
-    assign mask_bits_o          =   vrf_mask_rdata;
-
+    assign mask_bits_o  =   vrf_mask_rdata;
 
     assign ready_o      =   ((lane_next_state == ST_IDLE) && (lane_this_state == ST_WB));
 
   ///////////////////////
-  // Slide unit selection          
+  // Control signals          
   ///////////////////////
-    assign is_op_piped  =   0;
+    
+    assign is_op_mul    =   ((instr_running.funct6 inside {VSLL_VMUL, VMULH, VMULHU, VMULHSU}) && (instr_running.funct3 == OPMVV));
+    assign is_op_div    =   ((instr_running.funct6 inside {VDIV, VDIVU, VREMU, VREM}) && (instr_running.funct3 == OPMVV));
+    assign is_op_piped  =   is_op_mul || is_op_div ; // Wait for the completion of currently running instr!;
     assign is_op_alu    =   ~is_op_sldu && ~is_op_lsu;
     assign is_op_sldu   =   (instr_running.funct6 inside {VSLIDEUP, VSLIDEDOWN}) || 
                             ((instr_running.funct6 == VADC) && ((instr_running.funct3 == OPMVV) || (instr_running.funct3 == OPMVX)) ||
@@ -140,9 +149,12 @@ module lane import vect_pkg::*; #(
     assign alu_valid    =   is_op_alu;
     //assign alu_valid    =   (lane_this_state == ST_EXE) && is_op_alu;
 
+  ///////////////////////
+  // Slide unit selection          
+  ///////////////////////
  
   ///////////////////////
-  // LSU pipeline regs          
+  // External registers          
   ///////////////////////
 
 always_ff @(posedge clk_i or negedge resetn_i) begin : extArgPipe
@@ -259,7 +271,9 @@ ALU #(
     .b_i(alu_b),
     .c_i(alu_c),
     .opcode_i({instr_running.funct6, alu_op_type}),
-    .alu_q_o(alu_result)
+    .alu_q_o(alu_result),
+    .alu_ready_o(alu_ready),
+    .mul_ready_o(mul_ready)
 );
 
 
@@ -267,7 +281,7 @@ ALU #(
   ///////////////////////
   // Register file          
   ///////////////////////
-VRF RF(
+VRF_latch RF(
 
     .clk_i(clk_i),
     .resetn_i(resetn_i),
@@ -308,7 +322,6 @@ end
 always_comb begin : laneStateLogic
     unique case(lane_this_state) 
         ST_IDLE     :   lane_next_state =   instr_req_i                     ?   ST_READ_ARG :   ST_IDLE;
-        //ST_READ_ARG :   lane_next_state = (read_pipe_cnt == 0) ? (is_op_piped ? ST_EXE : ST_WB): ST_READ_ARG;
         ST_READ_ARG :   lane_next_state =   vrf_rd_op_ready                 ?   ST_EXE      :   ST_READ_ARG;
         ST_EXE      :   lane_next_state =   (exe_pipe_cnt == 0)             ?   ST_WB       :   ST_EXE;
         ST_WB       :   lane_next_state =   (lane_vd_elem_cnt == LANES-1)   ?   ST_IDLE     :   ST_WB;
@@ -332,7 +345,6 @@ always_ff @(posedge clk_i or negedge resetn_i) begin : elemCntFF
     if(!resetn_i) begin 
         lane_vs_elem_cnt    <=  0;
         lane_vd_elem_cnt    <=  0;
-        read_pipe_cnt       <=  0;
         exe_pipe_cnt        <=  0;
     end
     else begin
@@ -341,34 +353,29 @@ always_ff @(posedge clk_i or negedge resetn_i) begin : elemCntFF
                 lane_vs_elem_cnt    <=  0;
                 lane_vd_elem_cnt    <=  0;
                 //Wait one more if 
-                read_pipe_cnt       <=  RD_PIPE_STAGES-1; //was 2
                 exe_pipe_cnt        <=  0; 
                 //2 cycles for argument readocalplocalparam EXE_PIPE_STAGES = 3
             end
             ST_READ_ARG  :   begin 
                 lane_vs_elem_cnt    <=  0;
                 lane_vd_elem_cnt    <=  lane_vd_elem_cnt;
-                read_pipe_cnt       <=  (read_pipe_cnt > 0) ? read_pipe_cnt - 1 : read_pipe_cnt;
                 //Here - depending on the operation - either normal ALU or pipelined mul/div.
-                exe_pipe_cnt        <=  EXE_PIPE_STAGES-1; 
+                exe_pipe_cnt        <=  is_op_piped ?   EXE_PIPE_STAGES-1   :   0; 
             end
             ST_EXE       :   begin 
                 lane_vs_elem_cnt    <=  lane_vs_elem_cnt + 1;
                 lane_vd_elem_cnt    <=  0;
-                read_pipe_cnt       <=  0;
                 exe_pipe_cnt        <=  (exe_pipe_cnt > 0) ? exe_pipe_cnt-1 : exe_pipe_cnt; 
             end
             ST_WB        :   begin
                 //Maybe here?
                 lane_vs_elem_cnt    <=  lane_vs_elem_cnt + 1;
                 lane_vd_elem_cnt    <=  lane_vd_elem_cnt + 1;
-                read_pipe_cnt       <=  0;  
                 exe_pipe_cnt        <=  exe_pipe_cnt;               
             end
             default         :   begin
                 lane_vs_elem_cnt    <=  0;
                 lane_vd_elem_cnt    <=  0;
-                read_pipe_cnt       <=  0;
                 exe_pipe_cnt        <=  0; 
             end 
         endcase

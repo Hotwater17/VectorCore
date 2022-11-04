@@ -167,11 +167,16 @@ generate
 
         );
 */
-        lane LANE(
+        lane #(
+            .DATA_WIDTH(32),
+            .REG_NUM(32),   
+            .VLEN(512),     
+            .LANES(4),      
+            .PIPE_ST(4)    
+            )LANE(
             .clk_i(clk_i),
             .resetn_i(resetn_i),
             .lane_number_i(iLanes[1:0]),
-            .instr_valid_i(),
             .instr_req_i(vreq_i),
             .instr_i(vinstr_i),   
             .ready_o(lane_ready[iLanes]),

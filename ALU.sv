@@ -1,6 +1,6 @@
 module ALU import vect_pkg::*; #(
     parameter DATA_WIDTH    =   32,
-    parameter PIPE_ST       =   3
+    parameter PIPE_ST       =   5
 )(
     input                           clk_i,
     input                           resetn_i,
@@ -11,7 +11,9 @@ module ALU import vect_pkg::*; #(
     input   [DATA_WIDTH-1:0]        b_i,
     input   [DATA_WIDTH-1:0]        c_i,
     input   [6:0]                   opcode_i,
-    output  logic [DATA_WIDTH-1:0]  alu_q_o
+    output  logic [DATA_WIDTH-1:0]  alu_q_o,
+    output                          alu_ready_o,
+    output                          mul_ready_o
 );
 
 
@@ -41,27 +43,6 @@ logic                           alu_a_equal_b;
 logic                           alu_mask_en;
 logic                           alu_valid;
 
-logic   [DATA_WIDTH-1:0]        alu_pipe_a_q    [0:PIPE_ST-1];
-logic   [DATA_WIDTH-1:0]        alu_pipe_b_q    [0:PIPE_ST-1];
-logic   [DATA_WIDTH-1:0]        alu_pipe_c_q    [0:PIPE_ST-1];
-//logic   [DATA_WIDTH-1:0]        alu_pipe_res_q  [0:PIPE_ST-1];
-logic   [6:0]                   alu_pipe_op_q   [0:PIPE_ST-1];
-
-logic                           alu_pipe_alb_q  [0:PIPE_ST-1];
-logic                           alu_pipe_aeb_q  [0:PIPE_ST-1];
-logic                           alu_pipe_m_q    [0:PIPE_ST-1];
-logic                           alu_pipe_v_q    [0:PIPE_ST-1];
-
-logic   [DATA_WIDTH-1:0]        alu_pipe_a_d    [0:PIPE_ST];
-logic   [DATA_WIDTH-1:0]        alu_pipe_b_d    [0:PIPE_ST];
-logic   [DATA_WIDTH-1:0]        alu_pipe_c_d    [0:PIPE_ST];
-//logic   [DATA_WIDTH-1:0]        alu_pipe_res_d  [0:PIPE_ST-1];
-logic   [6:0]                   alu_pipe_op_d   [0:PIPE_ST];
-
-logic                           alu_pipe_alb_d  [0:PIPE_ST];
-logic                           alu_pipe_aeb_d  [0:PIPE_ST];
-logic                           alu_pipe_m_d    [0:PIPE_ST];
-logic                           alu_pipe_v_d    [0:PIPE_ST];
 
 
 assign a_less_b     =   $signed(alu_a < alu_b);
@@ -72,6 +53,9 @@ assign b_signed     =   ((alu_op == VMULH) || alu_op == VMULHSU);
 assign is_mul       =   (alu_op inside {{VSLL_VMUL, MULT}, {VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT}});
 assign is_div       =   (alu_op inside {{VDIV, MULT}, {VDIVU, MULT}, {VREMU, MULT}, {VREM,MULT}});   
 assign is_alu       =   !is_mul && !is_div;
+
+assign alu_ready_o  =   1'b1; //###############
+assign mul_ready_o  =   1'b0; //###############
 //assign mul_raw_out   =   $signed({alu_a[DATA_WIDTH-1] & a_signed, alu_a}) * $signed({alu_b[DATA_WIDTH-1] & b_signed, alu_b});
 //assign div_quotient =   alu_a / alu_b;   
 //assign div_remainder=   alu_a % alu_b;
@@ -104,14 +88,14 @@ DW_mult_pipe #
 (
 	.a_width(DATA_WIDTH), 
 	.b_width(DATA_WIDTH), 
-	.num_stages(5),
+	.num_stages(PIPE_ST),
 	.stall_mode(1), 
 	.rst_mode(1), 
 	.op_iso_mode(1)
 ) MULT_PIPE (
 	.clk(clk_i), 
 	.rst_n(resetn_i), 
-	.en(is_mul),
+	.en(is_mul && mask_en_i),
 	//.tc(mul_b_is_signed), 
     .tc(b_signed), 
 	.a(alu_b), 
@@ -142,13 +126,13 @@ always_comb begin : mulLogic
     end
 end
 
-
+/*
 DW_div_pipe #(
 	.a_width(DATA_WIDTH), 
 	.b_width(DATA_WIDTH), 
 	.tc_mode(1), 
 	.rem_mode(1),
-	.num_stages(8), 
+	.num_stages(PIPE_ST), 
 	.stall_mode(1), 
 	.rst_mode(1),
 	.op_iso_mode(1)
@@ -179,114 +163,27 @@ always_comb begin : divLogic
         endcase
     end
 end
-//##### PIPELINE #####
+*/
 
-assign alu_pipe_a_d[0]      =   a_i;
-assign alu_pipe_b_d[0]      =   b_i;
-assign alu_pipe_c_d[0]      =   c_i;
-//assign alu_pipe_res_d[0]    =   ;
-assign alu_pipe_op_d[0]     =   opcode_i;
 
-assign alu_pipe_alb_d[0]    =   a_less_b;
-assign alu_pipe_aeb_d[0]    =   a_equal_b;
-assign alu_pipe_m_d[0]      =   mask_en_i;
-assign alu_pipe_v_d[0]      =   valid_i;
+assign alu_a                =   a_i;
+assign alu_b                =   b_i;
+assign alu_c                =   c_i;
+assign alu_op               =   opcode_i;
 
-assign alu_a                =   alu_pipe_a_d[PIPE_ST];
-assign alu_b                =   alu_pipe_b_d[PIPE_ST];
-assign alu_c                =   alu_pipe_c_d[PIPE_ST];
-assign alu_op               =   alu_pipe_op_d[PIPE_ST];
-
-assign alu_a_less_b         =   alu_pipe_alb_d[PIPE_ST];
-assign alu_a_equal_b        =   alu_pipe_aeb_d[PIPE_ST];
-assign alu_mask_en          =   alu_pipe_m_d[PIPE_ST];
-assign alu_valid            =   alu_pipe_v_d[PIPE_ST];
+assign alu_a_less_b         =   a_less_b;
+assign alu_a_equal_b        =   a_equal_b;
+assign alu_mask_en          =   mask_en_i;
+assign alu_valid            =   valid_i;
 
 always_comb begin : blockName
     if(is_alu)      alu_q_o =   alu_res;
     else if(is_mul) alu_q_o =   mul_result;
-    else            alu_q_o =   div_result;   
+    else            alu_q_o =   '0;
+    //else            alu_q_o =   div_result;   
 end
 
 
-
-genvar iPipe;
-
-generate
-
-    for(iPipe = 0; iPipe < PIPE_ST; iPipe = iPipe + 1) begin
-
-        assign alu_pipe_a_d[iPipe + 1]      = alu_pipe_a_q[iPipe];
-        assign alu_pipe_b_d[iPipe + 1]      = alu_pipe_b_q[iPipe];
-        assign alu_pipe_c_d[iPipe + 1]      = alu_pipe_c_q[iPipe];
-        //assign alu_pipe_res_d[iPipe + 1]    = alu_pipe_res_q[iPipe];
-        assign alu_pipe_op_d[iPipe + 1]     = alu_pipe_op_q[iPipe];
-        assign alu_pipe_alb_d[iPipe + 1]    = alu_pipe_alb_q[iPipe];
-        assign alu_pipe_aeb_d[iPipe + 1]    = alu_pipe_aeb_q[iPipe];
-        assign alu_pipe_m_d[iPipe + 1]      = alu_pipe_m_q[iPipe];   
-        assign alu_pipe_v_d[iPipe + 1]      = alu_pipe_v_q[iPipe];   
-
-        
-        always_ff @(posedge clk_i or negedge resetn_i) begin : aluPipe
-            if(!resetn_i) begin
-                alu_pipe_a_q[iPipe]     <=  '0;    
-                alu_pipe_b_q[iPipe]     <=  '0;
-                alu_pipe_c_q[iPipe]     <=  '0;
-                //alu_pipe_res_q[iPipe]   <=  '0;
-                alu_pipe_op_q[iPipe]    <=  '0;
-                alu_pipe_alb_q[iPipe]   <=  '0;  
-                alu_pipe_aeb_q[iPipe]   <=  '0;
-                alu_pipe_m_q[iPipe]     <=  '0;  
-                alu_pipe_v_q[iPipe]     <=  '0;  
-                
-            end
-            else if(valid_i) begin
-                alu_pipe_a_q[iPipe]     <=  alu_pipe_a_d[iPipe];
-                alu_pipe_b_q[iPipe]     <=  alu_pipe_b_d[iPipe];
-                alu_pipe_c_q[iPipe]     <=  alu_pipe_c_d[iPipe];
-                //alu_pipe_res_q[iPipe]   <=  alu_pipe_res_d[iPipe];
-                alu_pipe_op_q[iPipe]    <=  alu_pipe_op_d[iPipe];
-                alu_pipe_alb_q[iPipe]   <=  alu_pipe_alb_d[iPipe];  
-                alu_pipe_aeb_q[iPipe]   <=  alu_pipe_aeb_d[iPipe];  
-                alu_pipe_m_q[iPipe]     <=  alu_pipe_m_d[iPipe];    
-                alu_pipe_v_q[iPipe]     <=  alu_pipe_v_d[iPipe];    
-            end
-        end    
-        
-/*
-        SEQGEN A_PIPE(
-            .EN(valid_i),
-            .AC(resetn_i),
-            .D(alu_pipe_a_d[iPipe]),
-            .Q(alu_pipe_a_q[iPipe]),
-            .CLK(clk_i)
-        );
-        SEQGEN B_PIPE(
-            .EN(valid_i),
-            .AC(resetn_i),
-            .D(alu_pipe_b_d[iPipe]),
-            .Q(alu_pipe_b_q[iPipe]),
-            .CLK(clk_i)
-        );   
-        SEQGEN C_PIPE(
-            .EN(valid_i),
-            .AC(resetn_i),
-            .D(alu_pipe_c_d[iPipe]),
-            .Q(alu_pipe_c_q[iPipe]),
-            .CLK(clk_i)
-        );
-        SEQGEN OP_PIPE(
-            .EN(valid_i),
-            .AC(resetn_i),
-            .D(alu_pipe_op_d[iPipe]),
-            .Q(alu_pipe_op_q[iPipe]),
-            .CLK(clk_i)
-        );
-*/
-
-    end
-
-endgenerate
 
 
 always_comb begin : aluLogic

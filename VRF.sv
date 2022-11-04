@@ -124,7 +124,7 @@ genvar iBank;
 
 generate
     for(iBank = 0; iBank < LANES; iBank = iBank + 1) begin : BANK
-        TS6N65LPLLA32X32M4F RF_BLOCK
+        TS6N65LPLLA32X32M2F RF_BLOCK
         (
             .AA(wr_addr_i),
             .D(wdata_i),
