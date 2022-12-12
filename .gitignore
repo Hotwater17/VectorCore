@@ -7,8 +7,10 @@ top_pad.sv
 AHB_template.sv
 VRF.sv.backup
 lane.sv.backup
-lane_piped.sv
+lane.sv
 testalu.sv
+controller.sv
+instr_issue.sv
 4Lanes/
 unused/
 ScalarOld/
