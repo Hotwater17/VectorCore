@@ -5,7 +5,6 @@ module ALU import vect_pkg::*; #(
     input                           clk_i,
     input                           resetn_i,
     input                           valid_i,
-    input                           mask_i,
     input                           mask_en_i,
     input   [DATA_WIDTH-1:0]        a_i,
     input   [DATA_WIDTH-1:0]        b_i,
@@ -26,6 +25,7 @@ logic                           b_signed;
 
 logic                           is_mul;
 logic                           is_div;
+logic                           is_mac;
 logic   [(DATA_WIDTH*2)-1:0]    mul_raw_out;
 logic   [DATA_WIDTH-1:0]        div_quotient;
 logic   [DATA_WIDTH-1:0]        div_remainder;
@@ -50,9 +50,11 @@ assign a_equal_b    =   alu_a == alu_b;
 assign a_signed     =   (alu_op == VMULH);
 assign b_signed     =   ((alu_op == VMULH) || alu_op == VMULHSU);
 
-assign is_mul       =   (alu_op inside {{VSLL_VMUL, MULT}, {VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT}});
+assign is_mul       =   (alu_op inside {{VSLL_VMUL, MULT}, {VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT},
+                        {VSSRA_VNMSUB, MULT}, {VNSRA_VMACC, MULT}, {VNCLIP_VNMSAC, MULT}, {VSRA_VMADD, MULT}});
 assign is_div       =   (alu_op inside {{VDIV, MULT}, {VDIVU, MULT}, {VREMU, MULT}, {VREM,MULT}});   
 assign is_alu       =   !is_mul && !is_div;
+assign is_mac       =   (alu_op inside {{VSSRA_VNMSUB, MULT}, {VNSRA_VMACC, MULT}, {VNCLIP_VNMSAC, MULT}, {VSRA_VMADD, MULT}}); 
 
 assign alu_ready_o  =   1'b1; //###############
 assign mul_ready_o  =   1'b0; //###############
@@ -83,6 +85,26 @@ DW_div #(
     .divide_by_0(div_error)
 );
 */
+
+logic   [DATA_WIDTH-1:0]    c_pipe_d [0:PIPE_ST-1];
+logic   [DATA_WIDTH-1:0]    c_pipe_q [0:PIPE_ST-2];
+
+
+assign  c_pipe_d[0] =   c_i;
+assign  alu_c       =   c_pipe_q[PIPE_ST-2];
+genvar iC;
+generate
+    for(iC = 0; iC < PIPE_ST-1; iC = iC + 1) begin
+
+        assign  c_pipe_d[iC+1]    =   c_pipe_q[iC];
+        always_ff @(posedge clk_i or negedge resetn_i) begin : CPipe
+            if(~resetn_i)   c_pipe_q[iC]    <=    '0;
+            else if(is_mac) c_pipe_q[iC]    <=    c_pipe_d[iC];
+        end  
+    end
+
+endgenerate
+
 
 DW_mult_pipe #
 (
@@ -118,10 +140,10 @@ always_comb begin : mulLogic
             {VMULHSU, MULT}         :   mul_result = mul_raw_out[(DATA_WIDTH*2)-1:DATA_WIDTH];
 
             {VNSRA_VMACC, MULT}, 
-            {VSRA_VMADD, MULT}      :   mul_result = mul_raw_out[DATA_WIDTH-1:0]  + alu_c;   //add B to A*C - change in register, not in ALU
+            {VSRA_VMADD, MULT}      :   mul_result = mul_raw_out[DATA_WIDTH-1:0]  + alu_c;   //add C to A*B - change in register, not in ALU
             {VNCLIP_VNMSAC, MULT},
-            {VSSRA_VNMSUB, MULT}    :   mul_result = -mul_raw_out[DATA_WIDTH-1:0] + alu_c;  //subtract B from A*C, change in register, not in ALU
-            
+            {VSSRA_VNMSUB, MULT}    :   mul_result = -mul_raw_out[DATA_WIDTH-1:0] + alu_c;  //subtract A*B from C, change in register, not in ALU
+            default                 :   mul_result = '0;
         endcase
     end
 end
@@ -168,7 +190,7 @@ end
 
 assign alu_a                =   a_i;
 assign alu_b                =   b_i;
-assign alu_c                =   c_i;
+//assign alu_c                =   c_i;
 assign alu_op               =   opcode_i;
 
 assign alu_a_less_b         =   a_less_b;

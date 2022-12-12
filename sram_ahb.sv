@@ -63,7 +63,7 @@ end
 //assign sram_addr = haddr_i;
 assign sram_wdata = hwdata_i;
 assign hrdata_o = sram_rdata; 
-/*
+
 TSDN65LPLLA4096X32M8M SRAM(
 .AA(sram_addr[13:2]),
 .DA(sram_wdata),
@@ -79,8 +79,9 @@ TSDN65LPLLA4096X32M8M SRAM(
 .CLKB(1'b0),
 .QA(sram_rdata),
 .QB()
-);*/
+);
 
+/*
 sram32k SRAM(
     .Q(sram_rdata), 
     .CLK(clk_i), 
@@ -91,7 +92,7 @@ sram32k SRAM(
     .EMA(3'b000), 
     .RETN(hresetn_i)
 );
-
+*/
 /*
 	assign hresp_o = 1'b0;
     //Change to use when cache is miss/hit

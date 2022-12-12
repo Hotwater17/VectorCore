@@ -1,8 +1,9 @@
 module VRF #(
-    parameter DATA_WIDTH = 32,
-    parameter REG_NUM = 32,
-    parameter LANES = 4,
-    parameter VLEN = 512,
+    parameter DATA_WIDTH    =   32,
+    parameter REG_NUM       =   32,
+    parameter LANES         =   4,
+    parameter VLEN          =   512,
+    parameter ELEMS         =   VLEN/(LANES*DATA_WIDTH),
 
     localparam PARTITION_B = VLEN/LANES,
     localparam ADDR_B = $clog2(REG_NUM),
@@ -124,7 +125,7 @@ genvar iBank;
 
 generate
     for(iBank = 0; iBank < LANES; iBank = iBank + 1) begin : BANK
-        TS6N65LPLLA32X32M2F RF_BLOCK
+        TS6N65LPLLA32X32M4F RF_BLOCK
         (
             .AA(wr_addr_i),
             .D(wdata_i),
@@ -182,7 +183,28 @@ generate
     end
 endgenerate
 
+task show;   //{ USAGE: inst.show (low, high);
+   input [31:0] low, high;
+   integer i;
+   integer e;
+   begin //{
+   $display ("\n%m: RF content dump");
+   if (low < 0 || low > high || high >= Nword)
+      $display ("Error! Invalid address range (%0d, %0d).", low, high,
+                "\nUsage: %m (low, high);",
+                "\n       where low >= 0 and high <= %0d.", Nword-1);
+   else
+      begin
+      $display ("\n    V\tValue");
+      for (i = low ; i <= high ; i = i + 1) begin
+        $display ("\n %d\t%b", i, mem[i]);
+         for(e = 0; e < ELEMS; e = e + 1)
+            $$display("%d \t", );
+      end
 
+      end
+   end //}
+endtask //}
 
 
 endmodule

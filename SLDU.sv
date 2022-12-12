@@ -1,10 +1,11 @@
 module SLDU import vect_pkg::*; #(
-    parameter DATA_WIDTH = 32,
-    parameter LANES = 4,
-    parameter VLEN = 512,
+    parameter DATA_WIDTH    =   32,
+    parameter LANES         =   4,
+    parameter VLEN          =   512,
+    parameter ELEMS         =   VLEN/(DATA_WIDTH*LANES),
 
     localparam ELEM_N = VLEN/DATA_WIDTH, //16
-    localparam ELEM_B = $clog2(LANES),
+    localparam ELEM_B = $clog2(ELEMS),
     localparam FU_WIDTH = DATA_WIDTH * LANES,
     localparam VECTOR_BURST_SIZE = FU_WIDTH/DATA_WIDTH
 
@@ -56,7 +57,7 @@ logic                       is_op_red;
 logic   [DATA_WIDTH-1:0]    red_result_d;
 logic   [DATA_WIDTH-1:0]    red_result_q;
 logic                       instr_is_masked;
-logic   [LANES-1:0]         elem_masked;
+logic   [ELEMS-1:0]         elem_masked;
 logic   [DATA_WIDTH-1:0]    mask_q;
 
 
@@ -214,7 +215,7 @@ always_comb begin : decoder
 end
 
 //Controller
-
+    //10010110001000001010001001010111 //vmul.vv v10,v2,v1 unmasked
 
     
     //Slide vreg elem_sel will only be used to read from Vs2.

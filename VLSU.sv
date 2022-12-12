@@ -1,9 +1,10 @@
 module VLSU import vect_pkg::*; #(
- parameter DATA_WIDTH = 32,
- parameter LANES = 4,
- parameter VLEN = 512,
+ parameter DATA_WIDTH   =   32,
+ parameter LANES        =   4,
+ parameter VLEN         =   512,
+ parameter ELEMS        =   VLEN/(DATA_WIDTH*LANES),
  
- localparam ELEM_B = $clog2(LANES),
+ localparam ELEM_B = $clog2(ELEMS),
  localparam FU_WIDTH = DATA_WIDTH * LANES,
  localparam VECTOR_BURST_SIZE = FU_WIDTH/DATA_WIDTH
 )(
@@ -66,7 +67,7 @@ logic   is_first_elem;
 //assign  new_addr_calc = (lsu_lane_this_cnt == LANES-1); 
 assign  new_addr_calc = (lsu_this_state == LSU_READ); 
 assign  is_base_addr = (lsu_vd_elem_this_cnt == 0) && ((lsu_this_state == LSU_IDLE) || (lsu_this_state == LSU_READ));
-assign  ready_o = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && (lsu_vd_elem_this_cnt == LANES-1);
+assign  ready_o = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && (lsu_vd_elem_this_cnt == ELEMS-1);
         //Should I just set ready when Idle?
 //assign ready_o = lsu_next_state == LSU_IDLE;
 
@@ -92,9 +93,9 @@ always_comb begin : lsuStateLogic
         LSU_IDLE    :   lsu_next_state = (instr_pending && instr_valid) ? LSU_READ : LSU_IDLE;
         LSU_READ    :   lsu_next_state = instr_rn_w ? LSU_STORE : LSU_LOAD;
         LSU_STORE   :   lsu_next_state = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
-                                        ? ((lsu_vd_elem_this_cnt == LANES-1) ? LSU_IDLE : LSU_READ) : LSU_STORE; 
+                                        ? ((lsu_vd_elem_this_cnt == ELEMS-1) ? LSU_IDLE : LSU_READ) : LSU_STORE; 
         LSU_LOAD    :   lsu_next_state = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
-                                        ? ((lsu_vd_elem_this_cnt == LANES-1) ? LSU_IDLE : LSU_READ) : LSU_LOAD;
+                                        ? ((lsu_vd_elem_this_cnt == ELEMS-1) ? LSU_IDLE : LSU_READ) : LSU_LOAD;
         default     :   lsu_next_state = LSU_IDLE;
 
     endcase
@@ -238,28 +239,28 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
                 //haddr_o = (ahb_next_state != AHB_IDLE) ? ap_addr[lsu_lane_this_cnt] : '0; 
                 haddr_o = ahb_req ? ap_addr[lsu_lane_this_cnt] : 32'hFFFFFFFF; 
                 hwdata_o = '0;
-                hsize_o = HSIZE_WORD;
+                hsize_o = 3'b011;
                 hwrite_o = (ahb_next_state != AHB_IDLE) ? instr_rn_w : '0;   
             end
             AHB_READ    :   begin
                 ahb_next_state = mem_ready ? AHB_IDLE : AHB_READ;
                 haddr_o = ap_addr[lsu_lane_this_cnt];
                 hwdata_o = '0;
-                hsize_o = HSIZE_WORD;
+                hsize_o = 3'b011;
                 hwrite_o = instr_rn_w;                
             end
             AHB_WRITE    :   begin
                 ahb_next_state = mem_ready ? AHB_IDLE : AHB_WRITE;
                 haddr_o = ap_addr[lsu_lane_this_cnt];
                 hwdata_o = vrf_vs3_rdata_i[lsu_lane_this_cnt];
-                hsize_o = HSIZE_WORD;
+                hsize_o = 3'b011;
                 hwrite_o = instr_rn_w;             
             end
             default         :   begin
                 ahb_next_state = AHB_IDLE;
                 haddr_o = '0;
                 hwdata_o = '0;
-                hsize_o = HSIZE_WORD;
+                hsize_o = 3'b011;
                 hwrite_o = '0;
             end
 
@@ -283,7 +284,8 @@ generate
     for(iAP = 0; iAP < LANES; iAP = iAP + 1) begin
         Address_Calculator #(
             .DATA_WIDTH(DATA_WIDTH),
-            .LANES(LANES)
+            .LANES(LANES),
+            .ELEMS(ELEMS)
         ) AP(
             .clk_i(clk_i),
             .resetn_i(resetn_i),
@@ -308,7 +310,8 @@ endmodule
 module Address_Calculator import vect_pkg::*; #(
     parameter DATA_WIDTH = 32,
     parameter LANES = 4,
-    parameter ELEM_B = $clog2(LANES),
+    parameter ELEMS = 4,
+    parameter ELEM_B = $clog2(ELEMS),
     parameter FU_WIDTH = DATA_WIDTH * LANES,
     parameter VECTOR_BURST_SIZE = FU_WIDTH/DATA_WIDTH
 )(
