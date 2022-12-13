@@ -38,7 +38,10 @@ module VLSU import vect_pkg::*; #(
     
 );
 
-logic   [DATA_WIDTH-1:0]    ap_addr [0:LANES-1];
+logic   [DATA_WIDTH-1:0]    ap_addr     [0:LANES-1];
+logic   [DATA_WIDTH-1:0]    rdata_reg_q [0:LANES-1];
+logic                       rdata_reg_wr;
+
 
 mem_instr_t instr_q;
 logic       instr_pending;
@@ -210,7 +213,13 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
 
 
 
-    assign mem_ready = hready_i;
+    assign mem_ready    =   hready_i;
+
+
+    always_ff @(posedge clk_i or negedge resetn_i) begin : rdataWrFF
+        if(!resetn_i)   rdata_reg_wr    <=  '0;
+        else            rdata_reg_wr    <=  ((mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && !instr_rn_w);        
+    end
     
     genvar iDemux;
     generate
@@ -218,11 +227,30 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
         for(iDemux = 0; iDemux < LANES; iDemux = iDemux + 1) begin
             always_comb begin : vrfDemux
                 vrf_vd_wdata_o[iDemux] = (iDemux == lsu_lane_this_cnt) ? hrdata_i : '0;
+                //vrf_vd_wdata_o[iDemux] = rdata_reg_q[iDemux];
                 vrf_vd_wr_en_o[iDemux] = ((iDemux == lsu_lane_this_cnt) && !instr_rn_w 
-                                        && (lsu_this_state == LSU_LOAD) && !element_masked && mem_ready); 
+                                        && (lsu_this_state == LSU_LOAD) && !element_masked && mem_ready);
+                //vrf_vd_wr_en_o[iDemux] = rdata_reg_wr /*&& ((vrf_mask_bit_i[{lsu_vd_elem_this_cnt, iDemux}]) || !instr_is_masked)*/;
+            end
+
+
+
+            always_ff @(posedge clk_i or negedge resetn_i) begin : rdataFF
+                if(!resetn_i) begin
+                    rdata_reg_q[iDemux]             <=  '0;
+                end
+                else if((iDemux == lsu_lane_this_cnt) && !instr_rn_w && (lsu_this_state == LSU_LOAD) && !element_masked && mem_ready) begin
+                    rdata_reg_q[iDemux]  <=  hrdata_i;
+                end
             end
         end
+
+    
+
+
     endgenerate
+
+
     
 
     typedef enum logic [1:0] {AHB_IDLE, AHB_READ, AHB_WRITE} ahb_fsm_t;
