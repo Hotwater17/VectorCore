@@ -4,6 +4,7 @@ module Vector_Core import vect_pkg::*; #(
     parameter LANES         =   4,
     parameter VLEN          =   512,
     parameter ELEMS         =   VLEN/(DATA_WIDTH*LANES),
+    parameter IQ_DEPTH      =   8,
 
     localparam FU_WIDTH = LANES*DATA_WIDTH,
     localparam ADDR_B = $clog2(REG_NUM),
@@ -17,6 +18,9 @@ module Vector_Core import vect_pkg::*; #(
     input   [DATA_WIDTH-1:0]        rs2_i,
     input                           vreq_i,
     output  reg                     vready_o,
+    output                          v_iq_ack_o,
+    output                          v_iq_full_o,
+    output                          v_lsu_active_o,
     output  [DATA_WIDTH-1:0]        rd_o,
     output                          rd_wr_en_o,
 
@@ -64,6 +68,7 @@ module Vector_Core import vect_pkg::*; #(
     logic                       instr_req_lane          [0:LANES-1];
     logic                       lane_ready              [0:LANES-1];
     logic                       lane_idle               [0:LANES-1];
+    logic                       lane_ready_pending;
 
 
     arithm_instr_t              instr_running;
@@ -97,6 +102,16 @@ module Vector_Core import vect_pkg::*; #(
     logic   [DATA_WIDTH-1:0]    rs1_reg_q;
     logic   [DATA_WIDTH-1:0]    rs2_reg_q;
 
+    logic   [DATA_WIDTH-1:0]    iq_instr_wr;
+    logic   [DATA_WIDTH-1:0]    iq_instr_rd;
+    logic                       iq_rd_en;
+    logic                       iq_wr_en;
+    logic                       iq_full;
+    logic                       iq_empty;
+    logic                       iq_error;
+    logic                       iq_wr_done;
+    logic                       iq_rd_done;
+
 
 assign  rd_wr_en_o  =   sldu_rd_wr_en;
 assign  rd_o        =   sldu_rd_wdata;
@@ -116,7 +131,7 @@ always_comb begin : readyLogic
     
 end
 */
-assign vready_o     =   lane_ready[0];
+assign vready_o   = lane_ready[0];
 assign is_op_sldu = (instr_running.funct6 inside {VSLIDEUP, VSLIDEDOWN}) || 
                         ((instr_running.funct6 == VADC) && ((instr_running.funct3 == OPMVV) || (instr_running.funct3 == OPMVX)) ||
                         is_op_red);
@@ -130,11 +145,58 @@ assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VR
   // Instruction issue          
   ///////////////////////
 
-    //idk fucking fifo or w00t
+   //FIFO?
+    always_ff @(posedge clk_i or negedge resetn_i) begin : readyPendingFF
+        if(!resetn_i)                   lane_ready_pending  <=  1'b1;
+        else if(!lane_ready_pending)    lane_ready_pending  <=  lane_ready[0];
+        else if(lane_ready_pending)     lane_ready_pending  <=  iq_rd_en;
+    end
+
+    always_ff @(posedge clk_i or negedge resetn_i) begin : ackFF
+        if(!resetn_i)      begin 
+            iq_wr_done  <=  0;
+            iq_rd_done  <=  0;
+        end
+        else begin
+            iq_rd_done  <=  !iq_rd_en;
+            iq_wr_done  <=  !iq_wr_en;
+        end 
+    end
+
+    assign  v_iq_ack_o      =   iq_wr_done && !iq_error;
+    assign  iq_wr_en        =   !(vreq_i && !iq_full);
+    assign  iq_rd_en        =   !(!iq_empty && lane_ready_pending); 
+    assign  v_lsu_active_o  =   is_op_lsu; //Probably not right
+    assign  v_iq_full_o     =   iq_full;
+    assign  iq_instr_wr     =   vinstr_i;
+
+   DW_fifo_s1_sf #(
+        .width(DATA_WIDTH), 
+        .depth(IQ_DEPTH),
+        .ae_level(1), 
+        .af_level(IQ_DEPTH-1), 
+        .err_mode(0), 
+        .rst_mode(0)
+    ) IQ(
+        .clk(clk_i), 
+        .rst_n(resetn_i), 
+        .push_req_n(iq_wr_en),
+        .pop_req_n(iq_rd_en),
+        .diag_n(1'b1),
+        .data_in(iq_instr_wr), 
+        .empty(iq_empty),
+        //.almost_empty(almost_empty_inst),
+        //.half_full(half_full_inst),
+        //.almost_full(almost_full_inst),
+        .full(iq_full),
+        .error(iq_error),
+        .data_out(iq_instr_rd) 
+    );
 
     always_ff @(posedge clk_i or negedge resetn_i) begin : instrFF
-        if(!resetn_i) instr_running <= 0;
-        else if(vreq_i) instr_running <= vinstr_i;
+        if(!resetn_i)   instr_running <= 0;
+        //else if(vreq_i) instr_running <= vinstr_i;
+        else if(iq_rd_done) instr_running <= iq_instr_rd;
     end
 
 
@@ -204,8 +266,8 @@ generate
             )LANE(
             .clk_i(clk_i),
             .resetn_i(resetn_i),
-            .instr_req_i(vreq_i),
-            .instr_i(vinstr_i),   
+            .instr_req_i(iq_rd_done),
+            .instr_i(iq_instr_rd),
             .ready_o(lane_ready[iLanes]),
             .idle_o(lane_idle[iLanes]),
             .mask_bits_i(mask_bits_i[iLanes]),
@@ -252,7 +314,8 @@ endgenerate
         ext_instr_buf_q <=  instr_running;
         ext_is_new      <=  '0;
     end 
-    else if(vreq_i) begin
+    //else if(vreq_i) begin
+    else if(iq_rd_done) begin
         ext_is_new      <=  1'b1;
     end 
   end

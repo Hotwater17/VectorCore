@@ -26,6 +26,9 @@ logic [DATA_WIDTH-1:0]  vect_rs1_rdata;
 logic [DATA_WIDTH-1:0]  vect_rs2_rdata;
 logic [DATA_WIDTH-1:0]  vect_rd_wdata;
 logic [DATA_WIDTH-1:0]  vect_instr;
+logic                   vect_iq_full;
+logic                   vect_ack;
+logic                   vect_lsu_active;
 logic                   vect_rf_wr_en;
 logic                   vect_ready;
 logic                   vect_req;
@@ -65,7 +68,10 @@ core_ahb #(
 .clk_i(clk_i),
 .reset_i(resetn_i),
 .vect_req_o(vect_req),
+.vect_ack_i(vect_ack),
 .vect_ready_i(vect_ready),
+.vect_iq_full_i(vect_iq_full),
+.vect_lsu_active_i(vect_lsu_active),
 .vect_instr_o(vect_instr),
 .vect_rf_wr_en_i(vect_rf_wr_en),
 .vect_rd_wdata_i(vect_rd_wdata),
@@ -91,7 +97,10 @@ Vector_Core #(
 .rs1_i(vect_rs1_rdata),
 .rs2_i(vect_rs2_rdata),
 .vreq_i(vect_req),
+.v_iq_ack_o(vect_ack),
 .vready_o(vect_ready),
+.v_iq_full_o(vect_iq_full),
+.v_lsu_active_o(vect_lsu_active),
 .rd_o(vect_rd_wdata),
 .rd_wr_en_o(vect_rf_wr_en),
 .haddr_o(v_haddr), 

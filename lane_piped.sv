@@ -153,8 +153,7 @@ module lane import vect_pkg::*; #(
 
     logic   [DATA_WIDTH-1:0]    sldu_result;
     
-    logic                       mul_ready;
-    logic                       alu_ready;
+
   ///////////////////////
   // WB stage logic     
   ///////////////////////
@@ -512,9 +511,7 @@ ALU #(
     .b_i(alu_b),
     .c_i(alu_c),
     .opcode_i({ex_instr_q.funct6, ex_alu_op_type}),
-    .alu_q_o(alu_result),
-    .alu_ready_o(alu_ready),
-    .mul_ready_o(mul_ready)
+    .alu_q_o(alu_result)
 );
 
 

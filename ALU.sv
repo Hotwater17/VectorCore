@@ -10,9 +10,7 @@ module ALU import vect_pkg::*; #(
     input   [DATA_WIDTH-1:0]        b_i,
     input   [DATA_WIDTH-1:0]        c_i,
     input   [6:0]                   opcode_i,
-    output  logic [DATA_WIDTH-1:0]  alu_q_o,
-    output                          alu_ready_o,
-    output                          mul_ready_o
+    output  logic [DATA_WIDTH-1:0]  alu_q_o
 );
 
 
@@ -56,35 +54,14 @@ assign is_div       =   (alu_op inside {{VDIV, MULT}, {VDIVU, MULT}, {VREMU, MUL
 assign is_alu       =   !is_mul && !is_div;
 assign is_mac       =   (alu_op inside {{VSSRA_VNMSUB, MULT}, {VNSRA_VMACC, MULT}, {VNCLIP_VNMSAC, MULT}, {VSRA_VMADD, MULT}}); 
 
-assign alu_ready_o  =   1'b1; //###############
-assign mul_ready_o  =   1'b0; //###############
 //assign mul_raw_out   =   $signed({alu_a[DATA_WIDTH-1] & a_signed, alu_a}) * $signed({alu_b[DATA_WIDTH-1] & b_signed, alu_b});
 //assign div_quotient =   alu_a / alu_b;   
 //assign div_remainder=   alu_a % alu_b;
-/*
-DW02_mult #(
-    .A_width(DATA_WIDTH), 
-    .B_width(DATA_WIDTH)
-    )mult (
-    .A(alu_b),
-    .B(alu_a),
-    .TC(b_signed),
-    .PRODUCT(mul_raw_out) 
-);
 
-DW_div #(
-    DATA_WIDTH,
-    DATA_WIDTH,
-    1, //Signed
-    1 //Rem = A % B
-    )U1 (
-    .a(alu_b), 
-    .b(alu_a), //reverse the order - A/B = Vs2/Vs1
-    .quotient(div_quotient),
-    .remainder(div_remainder),
-    .divide_by_0(div_error)
-);
-*/
+
+  ///////////////////////
+  // C (Vs3) pipeline for MAC - multiplier is pipelined       
+  ///////////////////////
 
 logic   [DATA_WIDTH-1:0]    c_pipe_d [0:PIPE_ST-1];
 logic   [DATA_WIDTH-1:0]    c_pipe_q [0:PIPE_ST-2];
@@ -105,6 +82,11 @@ generate
 
 endgenerate
 
+
+  ///////////////////////
+  // Pipelined multiplier from DW
+  // Replace with your own design       
+  ///////////////////////
 
 DW_mult_pipe #
 (
@@ -190,7 +172,7 @@ end
 
 assign alu_a                =   a_i;
 assign alu_b                =   b_i;
-//assign alu_c                =   c_i;
+//assign alu_c                =   c_i; - needs to be pipelined
 assign alu_op               =   opcode_i;
 
 assign alu_a_less_b         =   a_less_b;
@@ -235,10 +217,10 @@ always_comb begin : aluLogic
             end
             {VSUB_VREDOR, INT},
             {VSBC, INT},
-            {VMSBC, INT}   :   begin 
+            {VMSBC, INT}            :   begin 
                                         alu_res = alu_b - alu_a; //MASK
             end
-            {VRSUB_VREDXOR, INT}   :    alu_res = alu_a - alu_b;
+            {VRSUB_VREDXOR, INT}    :   alu_res = alu_a - alu_b;
 
             //Shift
             {VSLL_VMUL, INT}        :   alu_res = alu_b << alu_a[SHIFT_B-1:0];
