@@ -259,7 +259,7 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
     logic  ahb_req;
     assign ahb_req = (!element_masked) && (!is_first_elem) && (ahb_this_state == AHB_IDLE) && 
                     ((lsu_this_state == LSU_STORE) || (lsu_this_state == LSU_LOAD)); 
-
+    //Also add bus_grant signal to ahb_req 
     always_comb begin : ahbLogic
         unique case(ahb_this_state)
             AHB_IDLE        :   begin

@@ -65,7 +65,7 @@ assign sram_wdata = hwdata_i;
 assign hrdata_o = sram_rdata; 
 
 TSDN65LPLLA4096X32M8M SRAM(
-.AA(sram_addr[13:2]),
+.AA(sram_addr[13:0]),
 .DA(sram_wdata),
 .BWEBA('0),
 .WEBA(sram_wen),

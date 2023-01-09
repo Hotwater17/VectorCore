@@ -35,7 +35,10 @@ logic                   vect_req;
 
 
 typedef enum logic {BUS_SCALAR, BUS_VECTOR} bus_arb_e;
-bus_arb_e               bus_select;
+bus_arb_e               arb_bus_select;
+logic [3:0]             arb_vect_cycle_cnt;
+logic                   arb_vect_running;
+logic                   arb_scal_stall;
 
 
 
@@ -77,6 +80,7 @@ core_ahb #(
 .vect_rd_wdata_i(vect_rd_wdata),
 .vect_rs1_rdata_o(vect_rs1_rdata),
 .vect_rs2_rdata_o(vect_rs2_rdata),
+.bus_stall_i(arb_scal_stall),
 .haddr_o(s_haddr), 
 .hrdata_i(s_hrdata),
 .hwdata_o(s_hwdata),
@@ -115,18 +119,32 @@ Vector_Core #(
 
 
 //AHB arbiter
+
+/*
+What do I need:
+    -Look at scalar and vector requests
+    -Create grant, request, busy signals for each of them
+    -Resume transfer only if grant is active for each master
+    -A resolve scheme in case both scalar and vector want access
+    -A counter for counting vector access cycles in case 
+    -Or just stall scalar when vector is accessing memory?
+
+*/
+
 always_ff @(posedge clk_i) begin : arbiterFSM
-    if(!resetn_i) bus_select <= BUS_SCALAR;
+    if(!resetn_i) arb_bus_select <= BUS_SCALAR;
     else begin
-        //Give control over bus to vector ahb if vector request
-        if(vect_req) bus_select <= BUS_VECTOR; 
-        //Give control back to scalar if vector instruction finished
-        else if(vect_ready) bus_select <= BUS_SCALAR;
+        //Give control over bus to vector ahb if vector wants access to memory
+        if((arb_bus_select == BUS_SCALAR) && vect_lsu_active) arb_bus_select <= BUS_VECTOR; 
+        //Give control back to scalar if vector load/store instruction finished
+        else if((arb_bus_select == BUS_VECTOR) && vect_ready) arb_bus_select <= BUS_SCALAR;
     end
 end
 
+assign  arb_scal_stall  =   (arb_bus_select == BUS_VECTOR);
+
 always_comb begin : arbiterLogic
-    if(bus_select == BUS_SCALAR) begin
+    if(arb_bus_select == BUS_SCALAR) begin
         haddr_o   =   s_haddr;
         hwdata_o  =   s_hwdata;
         hsize_o   =   s_hsize;
@@ -141,11 +159,11 @@ always_comb begin : arbiterLogic
 end
 
 assign  s_hrdata =   hrdata_i;
-assign  s_hready =   hready_i;
+assign  s_hready =   hready_i && (arb_bus_select == BUS_SCALAR);
 assign  s_hresp  =   hresp_i;
 
 assign  v_hrdata =   hrdata_i;
-assign  v_hready =   hready_i;
+assign  v_hready =   hready_i && (arb_bus_select == BUS_VECTOR);
 assign  v_hresp  =   hresp_i;
 
 endmodule

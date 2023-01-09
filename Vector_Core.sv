@@ -20,7 +20,7 @@ module Vector_Core import vect_pkg::*; #(
     output  reg                     vready_o,
     output                          v_iq_ack_o,
     output                          v_iq_full_o,
-    output                          v_lsu_active_o,
+    output  reg                     v_lsu_active_o,
     output  [DATA_WIDTH-1:0]        rd_o,
     output                          rd_wr_en_o,
 
@@ -166,9 +166,9 @@ assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VR
     assign  v_iq_ack_o      =   iq_wr_done && !iq_error;
     assign  iq_wr_en        =   !(vreq_i && !iq_full);
     assign  iq_rd_en        =   !(!iq_empty && lane_ready_pending); 
-    assign  v_lsu_active_o  =   is_op_lsu; //Probably not right
     assign  v_iq_full_o     =   iq_full;
     assign  iq_instr_wr     =   vinstr_i;
+
 
    DW_fifo_s1_sf #(
         .width(DATA_WIDTH), 
@@ -196,12 +196,12 @@ assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VR
     always_ff @(posedge clk_i or negedge resetn_i) begin : instrFF
         if(!resetn_i)   instr_running <= 0;
         //else if(vreq_i) instr_running <= vinstr_i;
-        else if(iq_rd_done) instr_running <= iq_instr_rd;
+        else if(!iq_rd_en) instr_running <= iq_instr_rd;
     end
 
 
   ///////////////////////
-  // Scalar input registers          
+  // Scalar input registers (FIFO)          
   ///////////////////////
 
     assign is_rs1_used  =   (instr_running.funct3 inside {OPIVX, OPFVF, OPMVV}) || (instr_running.opcode inside {VLOAD, VSTORE});
@@ -240,16 +240,16 @@ generate
             
         
         if(is_op_lsu) begin
-            lane_vs_elem_sel[iLanes] = lsu_vs_elem_sel_lane[iLanes];
-            lane_vd_elem_sel[iLanes] = lsu_vd_elem_sel_lane[iLanes];
-            lane_vd_wdata[iLanes] =  lsu_vd_wdata_lane[iLanes];
-            lane_vd_wr_en[iLanes] =  lsu_vd_wr_en_lane[iLanes];
+            lane_vs_elem_sel[iLanes]    =   lsu_vs_elem_sel_lane[iLanes];
+            lane_vd_elem_sel[iLanes]    =   lsu_vd_elem_sel_lane[iLanes];
+            lane_vd_wdata[iLanes]       =   lsu_vd_wdata_lane[iLanes];
+            lane_vd_wr_en[iLanes]       =   lsu_vd_wr_en_lane[iLanes];
         end
         else begin
-            lane_vs_elem_sel[iLanes] = sldu_vs1_elem_sel_lane[iLanes];
-            lane_vd_elem_sel[iLanes] = sldu_vd_elem_sel_lane[iLanes];
-            lane_vd_wdata[iLanes] =   sldu_vd_wdata_lane[iLanes];
-            lane_vd_wr_en[iLanes] =   sldu_vd_wr_en_lane[iLanes];
+            lane_vs_elem_sel[iLanes]    =   sldu_vs1_elem_sel_lane[iLanes];
+            lane_vd_elem_sel[iLanes]    =   sldu_vd_elem_sel_lane[iLanes];
+            lane_vd_wdata[iLanes]       =   sldu_vd_wdata_lane[iLanes];
+            lane_vd_wr_en[iLanes]       =   sldu_vd_wr_en_lane[iLanes];
         end
        
         end
@@ -266,7 +266,7 @@ generate
             )LANE(
             .clk_i(clk_i),
             .resetn_i(resetn_i),
-            .instr_req_i(iq_rd_done),
+            .instr_req_i(!iq_rd_en),
             .instr_i(iq_instr_rd),
             .ready_o(lane_ready[iLanes]),
             .idle_o(lane_idle[iLanes]),
@@ -304,6 +304,15 @@ endgenerate
   
   
   assign    ext_buf_req =   (is_op_lsu || is_op_sldu) && ext_is_new; 
+
+    //Determine if LSU is running for arbitering purpose. 
+    //Set when new LSU op is received. Clear when LSU is ready.
+    always_ff @(posedge clk_i or negedge resetn_i) begin : lsu_active_FF
+        if(!resetn_i)                           v_lsu_active_o  <=  1'b0;
+        else if(ext_is_new && is_op_lsu)        v_lsu_active_o  <=  1'b1;
+        else if(v_lsu_active_o && lsu_ready)    v_lsu_active_o  <=  1'b0;
+    end
+
 
   always_ff @(posedge clk_i or negedge resetn_i) begin : instr_buf
     if(~resetn_i)           begin
@@ -381,7 +390,8 @@ VLSU  #(
 );
 
 
-
+//If synthesis is being done, ignore
+`ifdef SIM_TASKS
 task showRF;   //{ USAGE: inst.show (low, high);
    input [31:0] low, high;
    integer i;
@@ -404,10 +414,10 @@ task showRF;   //{ USAGE: inst.show (low, high);
         $write("\n V%d", i);
          for(e = 0; e < ELEMS; e = e + 1) begin
             //for(l = 0; l < LANES; l = l + 1) begin
-            $write(" %d ", genLane[0].LANE.RF.v_reg[i][e]);
-            $write(" %d ", genLane[1].LANE.RF.v_reg[i][e]);
-            $write(" %d ", genLane[2].LANE.RF.v_reg[i][e]);
-            $write(" %d ", genLane[3].LANE.RF.v_reg[i][e]);
+            $write(" %h ", genLane[0].LANE.RF.v_reg[i][e]);
+            $write(" %h ", genLane[1].LANE.RF.v_reg[i][e]);
+            $write(" %h ", genLane[2].LANE.RF.v_reg[i][e]);
+            $write(" %h ", genLane[3].LANE.RF.v_reg[i][e]);
                 //$write("a");      
          end
 
@@ -417,6 +427,6 @@ task showRF;   //{ USAGE: inst.show (low, high);
       $write("\n");
    end //}
 endtask //}
-
+`endif 
 endmodule
 

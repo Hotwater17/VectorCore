@@ -409,13 +409,13 @@ module lane import vect_pkg::*; #(
     always_comb begin : elemCntSel
         if(ex_is_ext) begin
             //vrf_vs_elem_cnt =ext_vs_elem_cnt_i;
-            vrf_vd_elem_cnt = ext_vd_elem_cnt_i;
-            vrf_vd_wr_en    = ext_vd_wr_en_i;
+            vrf_vd_elem_cnt =   ext_vd_elem_cnt_i;
+            vrf_vd_wr_en    =   ext_vd_wr_en_i;
         end
 
         else begin
             //vrf_vs_elem_cnt = lane_vs_elem_cnt;
-            vrf_vd_elem_cnt = lane_vd_elem_cnt;
+            vrf_vd_elem_cnt =   lane_vd_elem_cnt;
             //vrf_vd_wr_en    = ((mask_bits_i[vrf_vd_elem_cnt]  && (~wb_instr_q.vm)) || wb_instr_q.vm) && wb_busy;
             vrf_vd_wr_en    =   alu_mask_en && (wb_busy || wb_pipe_en);
         end
