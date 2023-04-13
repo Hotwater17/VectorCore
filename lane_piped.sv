@@ -12,6 +12,7 @@ module lane import vect_pkg::*; #(
 
     localparam EX_PIPE_STAGES      =   PIPE_ST,
     localparam EX_PIPE_B           =   $clog2(EX_PIPE_STAGES),
+    localparam SBIT_CNT_B          =   $clog2(DATA_WIDTH),
 
     localparam MASK_LANE_B          =   ELEMS
 )(
@@ -35,8 +36,9 @@ module lane import vect_pkg::*; #(
     output  [DATA_WIDTH-1:0]    mask_bits_o,
     //Scalar interface
     input   [DATA_WIDTH-1:0]    rs1_rdata_i,
-    output  [DATA_WIDTH-1:0]    rd_wdata_o,
-    
+
+    //Writeback set bits output
+    output  [SBIT_CNT_B-1:0]    sbit_cnt_o,
 
     //Ext interface
     input                       lsu_ready_i,
@@ -180,6 +182,7 @@ module lane import vect_pkg::*; #(
 
     logic   [DATA_WIDTH-1:0]    vrf_vd_wdata;
     logic                       vrf_vd_wr_en;
+
                
 
 
@@ -383,6 +386,7 @@ module lane import vect_pkg::*; #(
 
 
     /////##### Change it!!!!!!!!!!!!!!
+    //Change what!??!?!?!?
     assign  vrf_reg_wr_en   =   wb_busy; //Lasts for all element cycles
     assign  vrf_wr_req      =   (ex_alu_ready && ~ex_is_ext) || ext_ready; //Set when ALU is ready - but one cycle later!
     assign  vrf_wr_ready    =   wb_pipe_ready; //Set at the last element
@@ -405,6 +409,18 @@ module lane import vect_pkg::*; #(
         if(ex_is_ext)   vrf_vd_wdata    =   ext_vd_wdata_i; //For slide operations, take wdata from SLIDE unit
         else            vrf_vd_wdata    =   alu_result; 
     end
+
+  ///////////////////////
+  // Writeback data bit counting          
+  ///////////////////////
+
+    bit_counter #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .SBIT_CNT_B(SBIT_CNT_B)
+    ) VRF_BITS_CNT(
+        .data_i(vrf_vd_wdata),
+        .sbit_cnt_o(sbit_cnt_o)
+    );
 
     always_comb begin : elemCntSel
         if(ex_is_ext) begin

@@ -9,6 +9,7 @@ module Vector_Core import vect_pkg::*; #(
     localparam FU_WIDTH = LANES*DATA_WIDTH,
     localparam ADDR_B = $clog2(REG_NUM),
     localparam ELEM_B = $clog2(ELEMS),
+    localparam SBIT_CNT_B = $clog2(DATA_WIDTH),
     localparam VECT_BURST = FU_WIDTH/DATA_WIDTH
 )(
     input                           clk_i,
@@ -23,6 +24,7 @@ module Vector_Core import vect_pkg::*; #(
     output  reg                     v_lsu_active_o,
     output  [DATA_WIDTH-1:0]        rd_o,
     output                          rd_wr_en_o,
+    output  [SBIT_CNT_B-1:0]        sbit_cnt_o [LANES-2:0],
 
     output  reg [DATA_WIDTH-1:0]    haddr_o, 
     input       [DATA_WIDTH-1:0]    hrdata_i,
@@ -94,6 +96,9 @@ module Vector_Core import vect_pkg::*; #(
     logic                       ext_sldu_req        [0:LANES-1];
     logic                       ext_instr_save      [0:LANES-1];
 
+    logic   [SBIT_CNT_B-1:0]    lane_sbit_cnt       [0:LANES-1];
+    
+
     //Scalar operands registers
 
     logic                       is_rs1_used;
@@ -103,7 +108,7 @@ module Vector_Core import vect_pkg::*; #(
     logic   [DATA_WIDTH-1:0]    rs2_reg_q;
 
     logic   [DATA_WIDTH-1:0]    iq_instr_wr;
-    logic   [DATA_WIDTH-1:0]    iq_instr_rd;
+    arithm_instr_t              iq_instr_rd;
     logic                       iq_rd_en;
     logic                       iq_wr_en;
     logic                       iq_full;
@@ -112,10 +117,20 @@ module Vector_Core import vect_pkg::*; #(
     logic                       iq_wr_done;
     logic                       iq_rd_done;
 
+    logic                       rs1q_full;
+    logic                       rs1q_empty;
+    logic                       rs1q_error;
+    logic   [DATA_WIDTH-1:0]    rs1q_rdata;
+    
 
-assign  rd_wr_en_o  =   sldu_rd_wr_en;
-assign  rd_o        =   sldu_rd_wdata;
-assign  instr_in    =   vinstr_i;
+    logic                       rs2q_full;
+    logic                       rs2q_empty;
+    logic                       rs2q_error;
+    logic   [DATA_WIDTH-1:0]    rs2q_rdata;
+
+assign rd_wr_en_o   =   sldu_rd_wr_en;
+assign rd_o         =   sldu_rd_wdata;
+assign instr_in     =   vinstr_i;
 assign instr_imm5   =   instr_running.vs1_rs1_imm;
 
 
@@ -139,7 +154,26 @@ assign is_op_lsu = (instr_running.opcode inside {VLOAD, VSTORE});
 assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VREDOR, VRSUB_VREDXOR
                         , VMINU_VREDMINU, VMIN_VREDMIN, VMAXU_VREDMAXU, VMAX_VREDMAX}) && (instr_running.funct3 == OPMVV));
     
+  ///////////////////////
+  // Lane set bits comparison         
+  ///////////////////////
 
+  /*
+    This module calculates the difference between the number of set bits in each lane.
+    lane_sbit_diff[0] - difference between lane 0 and lane 1
+    lane_sbit_diff[1] - difference between lane 1 and lane 2
+    lane_sbit_diff[2] - difference between lane 2 and lane 3
+  */
+
+  
+    balance_ctrl #(
+    .DATA_WIDTH(DATA_WIDTH),
+    .SBIT_CNT_B(SBIT_CNT_B),
+    .LANES(LANES)
+    )   BALANCE_CTRL(
+    .lane_sbit_cnt_i(lane_sbit_cnt),
+    .balance_cnt_o(sbit_cnt_o)
+);
 
   ///////////////////////
   // Instruction issue          
@@ -204,9 +238,9 @@ assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VR
   // Scalar input registers (FIFO)          
   ///////////////////////
 
-    assign is_rs1_used  =   (instr_running.funct3 inside {OPIVX, OPFVF, OPMVV}) || (instr_running.opcode inside {VLOAD, VSTORE});
-    assign is_rs2_used  =   (instr_running.opcode inside {VLOAD, VSTORE}) && (instr_running[27:26] == OFF_STRIDE);
-    assign is_imm5_used =   (instr_running.funct3 == OPIVI);
+    assign is_rs1_used  =   (iq_instr_rd.funct3 inside {OPIVX, OPFVF, OPMVV}) || (iq_instr_rd.opcode inside {VLOAD, VSTORE});
+    assign is_rs2_used  =   (iq_instr_rd.opcode inside {VLOAD, VSTORE}) && (iq_instr_rd[27:26] == OFF_STRIDE);
+    assign is_imm5_used =   (iq_instr_rd.funct3 == OPIVI);
     
 
   always_ff @(posedge clk_i or negedge resetn_i) begin : rs_reg
@@ -215,14 +249,59 @@ assign is_op_red = ((instr_running.funct6 inside {VADD_VREDSUM, VREDAND, VSUB_VR
         rs2_reg_q                           <=  '0;
     end
     else begin
-        if(is_rs1_used)         rs1_reg_q   <=  rs1_i;
+        //if(is_rs1_used)         rs1_reg_q   <=  rs1q_rdata;
+        if(!iq_rd_en)           rs1_reg_q   <=  rs1q_rdata;
         else if(is_imm5_used)   rs1_reg_q   <=  instr_imm5;
-        if(is_rs2_used)         rs2_reg_q   <=  rs2_i;
+        //if(is_rs2_used)         rs2_reg_q   <=  rs2q_rdata;
+        if(!iq_rd_en)           rs2_reg_q   <=  rs2q_rdata;
     end
   end
 
+   DW_fifo_s1_sf #(
+        .width(DATA_WIDTH), 
+        .depth(IQ_DEPTH),
+        .ae_level(1), 
+        .af_level(IQ_DEPTH-1), 
+        .err_mode(0), 
+        .rst_mode(0)
+    ) RS1_BUFFER(
+        .clk(clk_i), 
+        .rst_n(resetn_i), 
+        .push_req_n(iq_wr_en),
+        .pop_req_n(iq_rd_en),
+        .diag_n(1'b1),
+        .data_in(rs1_i), 
+        .empty(rs1q_empty),
+        //.almost_empty(almost_empty_inst),
+        //.half_full(half_full_inst),
+        //.almost_full(almost_full_inst),
+        .full(rs1q_full),
+        .error(rs1q_error),
+        .data_out(rs1q_rdata) 
+    );
 
-
+   DW_fifo_s1_sf #(
+        .width(DATA_WIDTH), 
+        .depth(IQ_DEPTH),
+        .ae_level(1), 
+        .af_level(IQ_DEPTH-1), 
+        .err_mode(0), 
+        .rst_mode(0)
+    ) RS2_BUFFER(
+        .clk(clk_i), 
+        .rst_n(resetn_i), 
+        .push_req_n(iq_wr_en),
+        .pop_req_n(iq_rd_en),
+        .diag_n(1'b1),
+        .data_in(rs2_i), 
+        .empty(rs2q_empty),
+        //.almost_empty(almost_empty_inst),
+        //.half_full(half_full_inst),
+        //.almost_full(almost_full_inst),
+        .full(rs2q_full),
+        .error(rs2q_error),
+        .data_out(rs2q_rdata) 
+    );
   ///////////////////////
   // Lanes  
   ///////////////////////
@@ -255,7 +334,35 @@ generate
         end
         
 
-    
+          lane LANE(
+            .clk_i(clk_i),
+            .resetn_i(resetn_i),
+            .instr_req_i(!iq_rd_en),
+            .instr_i(iq_instr_rd),
+            .ready_o(lane_ready[iLanes]),
+            .idle_o(lane_idle[iLanes]),
+            .mask_bits_i(mask_bits_i[iLanes]),
+            .mask_bits_o(mask_bits_o[iLanes]),
+            .rs1_rdata_i(rs1_reg_q),
+            .sbit_cnt_o(lane_sbit_cnt[iLanes]),
+            .lsu_ready_i(lsu_ready),
+            .sldu_ready_i(sldu_ready),
+            .lsu_req_o(ext_lsu_req[iLanes]),
+            .sldu_req_o(ext_sldu_req[iLanes]),
+            .ext_instr_save_o(ext_instr_save[iLanes]),
+            .ext_vs_elem_cnt_i(lane_vs_elem_sel[iLanes]),
+            .ext_vd_elem_cnt_i(lane_vd_elem_sel[iLanes]),
+            .ext_vd_wr_en_i(lane_vd_wr_en[iLanes]),
+            .ext_vd_wdata_i(lane_vd_wdata[iLanes]),
+            .ext_vs1_rdata_o(lane_vs1_rdata[iLanes]),
+            .ext_vs2_rdata_o(lane_vs2_rdata[iLanes]),
+            .ext_vs3_rdata_o(lane_vs3_rdata[iLanes])
+
+        );
+  
+/*
+`else 
+
         lane #(
             .DATA_WIDTH(32),
             .REG_NUM(32),   
@@ -273,7 +380,6 @@ generate
             .mask_bits_i(mask_bits_i[iLanes]),
             .mask_bits_o(mask_bits_o[iLanes]),
             .rs1_rdata_i(rs1_reg_q),
-            .rd_wdata_o(),
             .lsu_ready_i(lsu_ready),
             .sldu_ready_i(sldu_ready),
             .lsu_req_o(ext_lsu_req[iLanes]),
@@ -289,6 +395,7 @@ generate
 
         );
 
+*/
 
     end
 

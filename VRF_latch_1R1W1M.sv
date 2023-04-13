@@ -200,7 +200,7 @@ generate
 
     end
 endgenerate
-
+`ifdef SIM_TASKS
 task show;   //{ USAGE: inst.show (low, high);
    input [31:0] low, high;
    integer i;
@@ -225,6 +225,6 @@ task show;   //{ USAGE: inst.show (low, high);
       $write("\n");
    end //}
 endtask //}
-
+`endif
 
 endmodule

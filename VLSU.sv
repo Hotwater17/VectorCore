@@ -61,6 +61,8 @@ typedef enum logic  [1:0] {LSU_IDLE = 2'h0, LSU_READ = 2'h1, LSU_STORE = 2'h2, L
 lsu_fsm_t lsu_this_state, lsu_next_state;
 logic [ELEM_B-1:0] lsu_vs_elem_this_cnt, lsu_vs_elem_next_cnt;
 logic [ELEM_B-1:0] lsu_vd_elem_this_cnt, lsu_vd_elem_next_cnt;
+logic [ELEM_B-1:0] lsu_vd_elem_reg;
+logic              lsu_vd_elem_reg_wr;    
 logic [ELEM_B-1:0] lsu_lane_this_cnt, lsu_lane_next_cnt;
 logic   new_addr_calc;
 logic   is_base_addr;
@@ -70,7 +72,9 @@ logic   is_first_elem;
 //assign  new_addr_calc = (lsu_lane_this_cnt == LANES-1); 
 assign  new_addr_calc = (lsu_this_state == LSU_READ); 
 assign  is_base_addr = (lsu_vd_elem_this_cnt == 0) && ((lsu_this_state == LSU_IDLE) || (lsu_this_state == LSU_READ));
-assign  ready_o = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && (lsu_vd_elem_this_cnt == ELEMS-1);
+//assign  ready_o = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && (lsu_vd_elem_this_cnt == ELEMS-1);
+assign  ready_o =    ((rdata_reg_wr && ~instr_rn_w) || (instr_rn_w && (mem_ready || element_masked) &&
+                        (lsu_lane_this_cnt == LANES-1))) && (lsu_vd_elem_this_cnt == ELEMS-1);
         //Should I just set ready when Idle?
 //assign ready_o = lsu_next_state == LSU_IDLE;
 
@@ -84,10 +88,11 @@ always_ff @(posedge clk_i or negedge resetn_i) begin : lsuFSM
     end
     else begin
         lsu_this_state <= lsu_next_state;
-        lsu_vs_elem_this_cnt <= lsu_vs_elem_next_cnt;
-        lsu_vd_elem_this_cnt <= lsu_vd_elem_next_cnt;
-        lsu_lane_this_cnt   <= lsu_lane_next_cnt;
-        is_first_elem       <= new_addr_calc;
+        lsu_vs_elem_this_cnt    <= lsu_vs_elem_next_cnt;
+        lsu_vd_elem_this_cnt    <= lsu_vd_elem_next_cnt;
+        lsu_lane_this_cnt       <= lsu_lane_next_cnt;
+        is_first_elem           <= new_addr_calc;
+
     end
 end
 
@@ -97,8 +102,9 @@ always_comb begin : lsuStateLogic
         LSU_READ    :   lsu_next_state = instr_rn_w ? LSU_STORE : LSU_LOAD;
         LSU_STORE   :   lsu_next_state = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
                                         ? ((lsu_vd_elem_this_cnt == ELEMS-1) ? LSU_IDLE : LSU_READ) : LSU_STORE; 
-        LSU_LOAD    :   lsu_next_state = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
+        /*LSU_LOAD    :   lsu_next_state = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
                                         ? ((lsu_vd_elem_this_cnt == ELEMS-1) ? LSU_IDLE : LSU_READ) : LSU_LOAD;
+        */LSU_LOAD  :   lsu_next_state =  rdata_reg_wr ? ((lsu_vd_elem_this_cnt == ELEMS-1) ? LSU_IDLE : LSU_READ) : LSU_LOAD;
         default     :   lsu_next_state = LSU_IDLE;
 
     endcase
@@ -113,6 +119,8 @@ always_comb begin : lsuVsCntLogic
                                             ? (lsu_vs_elem_this_cnt + 1) : lsu_vs_elem_this_cnt;
         LSU_LOAD    : lsu_vs_elem_next_cnt = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
                                             ? (lsu_vs_elem_this_cnt + 1) : lsu_vs_elem_this_cnt;
+        
+       
         default     : lsu_vs_elem_next_cnt = 0;
     endcase
 end
@@ -121,11 +129,13 @@ always_comb begin : lsuVdCntLogic
     unique case(lsu_this_state)
         //###### Count from 0
         LSU_IDLE    : lsu_vd_elem_next_cnt = 0;
-        LSU_READ    : lsu_vd_elem_next_cnt = lsu_vd_elem_this_cnt;
+        //LSU_READ    : lsu_vd_elem_next_cnt = lsu_vd_elem_this_cnt;
+        LSU_READ    : lsu_vd_elem_next_cnt = rdata_reg_wr ? (lsu_vd_elem_this_cnt + 1) : lsu_vd_elem_this_cnt;
         LSU_STORE   : lsu_vd_elem_next_cnt = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) 
                                             ? (lsu_vd_elem_this_cnt + 1) : lsu_vd_elem_this_cnt;
-        LSU_LOAD    : lsu_vd_elem_next_cnt = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1)
+        /*LSU_LOAD    : lsu_vd_elem_next_cnt = (mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1)
                                             ? (lsu_vd_elem_this_cnt + 1) : lsu_vd_elem_this_cnt;
+        */LSU_LOAD    : lsu_vd_elem_next_cnt =  rdata_reg_wr ? (lsu_vd_elem_this_cnt + 1) : lsu_vd_elem_this_cnt;
         default     : lsu_vd_elem_next_cnt = 0;
     endcase
 end
@@ -143,10 +153,17 @@ always_comb begin : lsuLaneCntLogic
     endcase
 end
 
+assign lsu_vd_elem_reg_wr = ((mem_ready || element_masked) && (lsu_lane_this_cnt == LANES-1) && !instr_rn_w);
+
+always_ff @(posedge clk_i or negedge resetn_i) begin : lsuVdElemRegFF
+    if(!resetn_i)               lsu_vd_elem_reg <=  '0;
+    else if(lsu_vd_elem_reg_wr) lsu_vd_elem_reg <=  lsu_vd_elem_this_cnt;
+end
+
 genvar iElem;
 generate
     for(iElem = 0; iElem < LANES; iElem = iElem + 1) begin
-        assign vrf_vd_elem_cnt_o[iElem] = lsu_vd_elem_this_cnt;
+        assign vrf_vd_elem_cnt_o[iElem] = lsu_vd_elem_reg;
         assign vrf_vs_elem_cnt_o[iElem] = lsu_vs_elem_this_cnt;
     end
 endgenerate
@@ -226,21 +243,21 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
 
         for(iDemux = 0; iDemux < LANES; iDemux = iDemux + 1) begin
             always_comb begin : vrfDemux
-                vrf_vd_wdata_o[iDemux] = (iDemux == lsu_lane_this_cnt) ? hrdata_i : '0;
-                //vrf_vd_wdata_o[iDemux] = rdata_reg_q[iDemux];
-                vrf_vd_wr_en_o[iDemux] = ((iDemux == lsu_lane_this_cnt) && !instr_rn_w 
+                //vrf_vd_wdata_o[iDemux] = (iDemux == lsu_lane_this_cnt) ? hrdata_i : '0;
+                vrf_vd_wdata_o[iDemux] = rdata_reg_q[iDemux];
+                /*vrf_vd_wr_en_o[iDemux] = ((iDemux == lsu_lane_this_cnt) && !instr_rn_w 
                                         && (lsu_this_state == LSU_LOAD) && !element_masked && mem_ready);
-                //vrf_vd_wr_en_o[iDemux] = rdata_reg_wr /*&& ((vrf_mask_bit_i[{lsu_vd_elem_this_cnt, iDemux}]) || !instr_is_masked)*/;
+                */vrf_vd_wr_en_o[iDemux] = rdata_reg_wr /*&& ((vrf_mask_bit_i[{lsu_vd_elem_this_cnt, iDemux}]) || !instr_is_masked)*/;
             end
 
 
 
             always_ff @(posedge clk_i or negedge resetn_i) begin : rdataFF
                 if(!resetn_i) begin
-                    rdata_reg_q[iDemux]             <=  '0;
+                    rdata_reg_q[iDemux] <=  '0;
                 end
                 else if((iDemux == lsu_lane_this_cnt) && !instr_rn_w && (lsu_this_state == LSU_LOAD) && !element_masked && mem_ready) begin
-                    rdata_reg_q[iDemux]  <=  hrdata_i;
+                    rdata_reg_q[iDemux] <=  hrdata_i;
                 end
             end
         end
@@ -258,7 +275,8 @@ assign element_masked = (instr_is_masked && ~vrf_mask_bit_i[{lsu_vd_elem_this_cn
 
     logic  ahb_req;
     assign ahb_req = (!element_masked) && (!is_first_elem) && (ahb_this_state == AHB_IDLE) && 
-                    ((lsu_this_state == LSU_STORE) || (lsu_this_state == LSU_LOAD)); 
+                    ((lsu_this_state == LSU_STORE) || (lsu_this_state == LSU_LOAD)) && 
+                    ((lsu_next_state != LSU_READ) && (lsu_next_state != LSU_IDLE)); 
     //Also add bus_grant signal to ahb_req 
     always_comb begin : ahbLogic
         unique case(ahb_this_state)
