@@ -23,13 +23,6 @@ module ALU import vect_pkg::*; #(
 
 localparam SHIFT_B = $clog2(DATA_WIDTH);
 
-logic                           com_tc;
-logic                           com_lt_le;
-logic                           com_ge_gt;
-logic                           com_leq;
-
-logic                           ash_tc;
-
 logic                           a_signed;
 logic                           b_signed;
 
@@ -38,14 +31,13 @@ logic                           is_mul;
 logic                           is_div;
 logic                           is_mac;
 
-
 logic   [(DATA_WIDTH*2)-1:0]    mul_raw_out;
-logic   [DATA_WIDTH-1:0]        mul_result;
 logic   [DATA_WIDTH-1:0]        div_result;
 logic   [DATA_WIDTH-1:0]        addsub_res;
 logic   [DATA_WIDTH-1:0]        mac_result;
 logic   [DATA_WIDTH-1:0]        shifter_res;
 logic   [DATA_WIDTH-1:0]        logic_res;
+logic   [DATA_WIDTH-1:0]        com_res;
 
 logic                           addsub_carry_e;
 logic                           alu_addsub_sel;
@@ -61,8 +53,6 @@ logic   [DATA_WIDTH-1:0]        alu_res;
 logic                           alu_mask_e;
 logic                           alu_valid;
 
-
-
 // Clock gate control
 logic                           clk_logic_e;
 logic                           clk_adder_e;
@@ -71,24 +61,16 @@ logic                           clk_com_e;
 logic                           clk_mul_e;
 logic                           clk_shifter_e;
 
+logic                           mul_low_e;
+logic                           mul_hi_e;
 
-assign alu_a                =   a_i;
-assign alu_b                =   b_i;
-assign alu_c                =   c_i; //- needs to be pipelined
-assign alu_oc               =   ocode_i;
+assign alu_a            =   a_i;
+assign alu_b            =   b_i;
+assign alu_c            =   c_i; //- needs to be pipelined
+assign alu_oc           =   ocode_i;
 
-
-assign alu_mask_e          =   mask_e_i;
-assign alu_valid            =   valid_i;
-
-always_comb begin : blockName
-    if(is_alu)      alu_q_o =   alu_res;
-    else if(is_mul) alu_q_o =   mul_result;
-    else            alu_q_o =   '0;
-    //else            alu_q_o =   div_result;   
-end
-
-
+assign alu_mask_e       =   mask_e_i;
+assign alu_valid        =   valid_i;
 
 assign a_signed         =   (alu_oc == VMULH);
 assign b_signed         =   ((alu_oc == VMULH) || alu_oc == VMULHSU);
@@ -111,21 +93,17 @@ assign alu_addsub_sel   =   (alu_oc inside {{VSUB_VREDOR, INT}, {VSBC, INT}, {VM
 // 0 - add, 1 - sub
 assign mac_addsub       =   (alu_oc inside {{VSSRA_VNMSUB, MULT}, {VNCLIP_VNMSAC, MULT}});
 
-assign addsub_carry_e  =   (alu_oc inside {{VADC, INT}, {VMADC, INT}, {VSBC, INT}, {VMSBC, INT}});
+assign addsub_carry_e   =   (alu_oc inside {{VADC, INT}, {VMADC, INT}, {VSBC, INT}, {VMSBC, INT}});
 
-assign com_leq          =   (alu_oc inside {{VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}});
-assign com_tc           =   (alu_oc inside {{VMIN_VREDMIN, INT}, {VMINU_VREDMINU, INT}, {VMAX_VREDMAX, INT}, {VMAXU_VREDMAXU, INT}, {VMSEQ_VMANDNOT, INT}, {VMSNE_VMAND, INT}, {VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}, {VMSLE_VMNAND, INT}, {VMSLEU_VMORNOT, INT}, {VMSGT_VMXNOR, INT}, {VMSGTU_VMNOR, INT}, {VMERGE_VCOMPRESS, INT}});
+assign clk_shifter_e    =   (alu_oc inside {{VSLL_VMUL, INT}, {VSRL, INT}, {VSRA_VMADD, INT}, {VNSRL, INT}, {VNSRA_VMACC, INT}});
+assign clk_logic_e      =   (alu_oc inside {{VAND, INT}, {VMSNE_VMAND, MULT}, {VOR, INT}, {VMSLTU_VMOR, MULT}, {VXOR, INT}, {VMSLT_VMXOR, MULT}, {VMSLE_VMNAND, MULT}, {VMSEQ_VMANDNOT, MULT}, {VMSGTU_VMNOR, MULT}, {VMSLEU_VMORNOT, MULT}, {VMSGT_VMXNOR, MULT}});
+assign clk_adder_e      =   (alu_oc inside {{VADD_VREDSUM, INT}, {VADC, INT}, {VMADC, INT}, {VSUB_VREDOR, INT}, {VSBC, INT}, {VMSBC, INT}, {VRSUB_VREDXOR, INT}});
+assign clk_com_e        =   (alu_oc inside {{VMIN_VREDMIN, INT}, {VMINU_VREDMINU, INT}, {VMAX_VREDMAX, INT}, {VMAXU_VREDMAXU, INT}, {VMSEQ_VMANDNOT, INT}, {VMSNE_VMAND, INT}, {VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}, {VMSLE_VMNAND, INT}, {VMSLEU_VMORNOT, INT}, {VMSGT_VMXNOR, INT}, {VMSGTU_VMNOR, INT}, {VMERGE_VCOMPRESS, INT}});
+assign clk_mul_e        =   (alu_oc inside {{VSLL_VMUL, MULT}, {VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT}, {VNSRA_VMACC, MULT}, {VSRA_VMADD, MULT}, {VNCLIP_VNMSAC, MULT}, {VSSRA_VNMSUB, MULT}});
+assign clk_mac_e        =   (alu_oc inside {{VNSRA_VMACC, MULT}, {VSRA_VMADD, MULT}, {VSSRA_VNMSUB, MULT}, {VNCLIP_VNMSAC, MULT}});
 
-
-
-assign clk_shifter_e   =   (alu_oc inside {{VSLL_VMUL, INT}, {VSRL, INT}, {VSRA_VMADD, INT}, {VNSRL, INT}, {VNSRA_VMACC, INT}});
-assign clk_logic_e     =   (alu_oc inside {{VAND, INT}, {VMSNE_VMAND, MULT}, {VOR, INT}, {VMSLTU_VMOR, MULT}, {VXOR, INT}, {VMSLT_VMXOR, MULT}, {VMSLE_VMNAND, MULT}, {VMSEQ_VMANDNOT, MULT}, {VMSGTU_VMNOR, MULT}, {VMSLEU_VMORNOT, MULT}, {VMSGT_VMXNOR, MULT}});
-assign clk_adder_e     =   (alu_oc inside {{VADD_VREDSUM, INT}, {VADC, INT}, {VMADC, INT}, {VSUB_VREDOR, INT}, {VSBC, INT}, {VMSBC, INT}, {VRSUB_VREDXOR, INT}});
-assign clk_com_e       =   (alu_oc inside {{VMIN_VREDMIN, INT}, {VMINU_VREDMINU, INT}, {VMAX_VREDMAX, INT}, {VMAXU_VREDMAXU, INT}, {VMSEQ_VMANDNOT, INT}, {VMSNE_VMAND, INT}, {VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}, {VMSLE_VMNAND, INT}, {VMSLEU_VMORNOT, INT}, {VMSGT_VMXNOR, INT}, {VMSGTU_VMNOR, INT}, {VMERGE_VCOMPRESS, INT}});
-assign clk_mul_e       =   (alu_oc inside {{VSLL_VMUL, MULT}, {VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT}, {VNSRA_VMACC, MULT}, {VSRA_VMADD, MULT}, {VNCLIP_VNMSAC, MULT}, {VSSRA_VNMSUB, MULT}});
-assign clk_mac_e       =   (alu_oc inside {{VNSRA_VMACC, MULT}, {VSRA_VMADD, MULT}, {VSSRA_VNMSUB, MULT}, {VNCLIP_VNMSAC, MULT}});
-
-
+assign mul_hi_e         =   (alu_oc inside {{VMULH, MULT}, {VMULHU, MULT}, {VMULHSU, MULT}});
+assign mul_low_e        =   (alu_oc inside {{VSLL_VMUL, MULT}});
 
 LOGIC #(
     .DATA_WIDTH(DATA_WIDTH)
@@ -149,7 +127,7 @@ SYN_MUL I_MUL(
 );
 
 ADDSUB #(
-
+    .DATA_WIDTH(DATA_WIDTH)
 ) ADDSUB(
     .module_clk_i(clk_i),
     .en_i(clk_adder_e),
@@ -162,7 +140,7 @@ ADDSUB #(
 );
 
 ADDSUB #(
-
+    .DATA_WIDTH(DATA_WIDTH)
 ) ADDSUB_MAC(
     .module_clk_i(clk_i),
     .en_i(clk_mac_e),
@@ -182,11 +160,8 @@ COM #(
     .en_i(clk_com_e),
     .a_i(alu_a),
     .b_i(alu_b),
-    .leq_i(com_leq),
-    .tc_i(com_tc),
-    .lt_le_o(com_lt_le),
-    .ge_gt_o(com_ge_gt)
-
+    .ocode_i(alu_oc),
+    .result_o(com_res)
 );
 
 SHIFTER #(
@@ -202,117 +177,25 @@ SHIFTER #(
 
 );
 
-always_comb begin : mulLogic
-
-    if(alu_valid && alu_mask_e) begin
-
-        unique case (alu_oc)
-
-            //Multiply
-            
-            {VSLL_VMUL, MULT}       :   mul_result = mul_raw_out[DATA_WIDTH-1:0];
-            {VMULH, MULT}           :   mul_result = mul_raw_out[(DATA_WIDTH*2)-1:DATA_WIDTH];
-            {VMULHU, MULT}          :   mul_result = mul_raw_out[(DATA_WIDTH*2)-1:DATA_WIDTH];
-            {VMULHSU, MULT}         :   mul_result = mul_raw_out[(DATA_WIDTH*2)-1:DATA_WIDTH];
-            {VNSRA_VMACC, MULT}, 
-            {VSRA_VMADD, MULT}      :   mul_result = mac_result;   //add C to A*B - change in register, not in ALU
-            {VNCLIP_VNMSAC, MULT},
-            {VSSRA_VNMSUB, MULT}    :   mul_result = mac_result;  //subtract A*B from C, change in register, not in ALU
-            default                 :   mul_result = mul_raw_out[DATA_WIDTH-1:0];
-        endcase
-    end
-    else                                mul_result = '0;
-end
-
-
-
-
-
-
-always_comb begin : aluLogic
-
-    if(alu_valid && alu_mask_e) begin
-
-        unique case (alu_oc)
-
-            {VAND, INT},
-            {VMSNE_VMAND, MULT},
-            {VOR, INT},
-            {VMSLTU_VMOR, MULT},
-            {VXOR, INT},
-            {VMSLT_VMXOR, MULT},
-            {VMSLE_VMNAND, MULT},
-            {VMSEQ_VMANDNOT, MULT},
-            {VMSGTU_VMNOR, MULT},
-            {VMSLEU_VMORNOT, MULT},
-            {VMSGT_VMXNOR, MULT}    :   alu_res = logic_res;
-
-
-            //Arithmetic
-            {VADD_VREDSUM, INT}, 
-            {VADC, INT}, 
-            {VMADC, INT}            :   begin 
-                                        alu_res = addsub_res;
-            end
-            {VSUB_VREDOR, INT},
-            {VSBC, INT},
-            {VMSBC, INT}            :   begin 
-                                        alu_res = addsub_res;
-            end
-            {VRSUB_VREDXOR, INT}    :   alu_res = addsub_res;
-
-            //Shift
-            /*
-            {VSLL_VMUL, INT}        :   alu_res = alu_b << alu_a[SHIFT_B-1:0];
-            {VSRL, INT}             :   alu_res = alu_b >> alu_a[SHIFT_B-1:0];
-            {VSRA_VMADD, INT}       :   alu_res = alu_b >>> alu_a[SHIFT_B-1:0];
-            */
-            {VSLL_VMUL, INT},
-            {VSRL, INT},
-            {VSRA_VMADD, INT}       :   alu_res = shifter_res;
-            //VNSRL   :   alu_res = (alu_b >> alu_a[SHIFT_B-1:0]); //Check - but Idk if its needed 
-            //VNSRA_VMACC   :   alu_res = $signed(alu_b >>> alu_a[SHIFT_B-1:0]); //Also check, also probably not needed
-
-            //Compare
-            {VMIN_VREDMIN, INT},
-            {VMINU_VREDMINU, INT}, 
-            {VMAX_VREDMAX, INT},
-            {VMAXU_VREDMAXU, INT}   :   begin
-                                        alu_res = ((com_lt_le & !com_ge_gt) ^ (alu_oc == VMAX_VREDMAX || alu_oc == VMAXU_VREDMAXU)) ? alu_b : alu_a;
-            end
-            {VMSEQ_VMANDNOT, INT},
-            {VMSNE_VMAND, INT}      :   begin
-                                        alu_res = {DATA_WIDTH{(com_lt_le & com_ge_gt) ^ (alu_oc == VMSNE_VMAND)}};
-                       
-            end
-            {VMSLT_VMXOR, INT},
-            {VMSLTU_VMOR, INT}      :   begin
-                                        alu_res = {DATA_WIDTH{com_lt_le }};
-            end
-            {VMSLE_VMNAND, INT},
-            {VMSLEU_VMORNOT, INT}   :   begin
-                                        alu_res = {DATA_WIDTH{com_lt_le ^ ((alu_oc == VMSGT_VMXNOR) || (alu_oc == VMSGTU_VMNOR))}};
-            end
-            {VMSGT_VMXNOR, INT},
-            {VMSGTU_VMNOR, INT}     :   begin
-                                        alu_res = {DATA_WIDTH{!com_lt_le & com_ge_gt}};
-            end      
-
-            //Merge
-            {VMERGE_VCOMPRESS, INT} :   alu_res = (alu_mask_e) ? alu_a : alu_b;
-
-
-
-            default                 :   alu_res = {DATA_WIDTH{1'b0}};
-        endcase
-    end
-    else                                alu_res =  {DATA_WIDTH{1'b0}};
-
-end
-
-
-
-
+SELECTOR #(
+    .DATA_WIDTH(DATA_WIDTH)
+) SELECTOR_I (
+    .addsub_sel_i(clk_adder_e),
+    .shift_sel_i(clk_shifter_e),
+    .logic_sel_i(clk_logic_e),
+    .mul_sel_hi_i(mul_hi_e),
+    .mul_sel_low_i(mul_low_e),
+    .com_sel_i(clk_com_e),
+    .mac_sel_i(clk_mac_e),
+    .addsub_data_i(addsub_res),
+    .shift_data_i(shifter_res),
+    .logic_data_i(logic_res),
+    .mul_low_data_i(mul_raw_out[DATA_WIDTH-1:0]),
+    .mul_hi_data_i(mul_raw_out[(DATA_WIDTH*2)-1:DATA_WIDTH]),
+    .com_data_i(com_res),
+    .mac_data_i(mac_result),
+    .data_o(alu_q_o)
+);
 
 endmodule
 

@@ -5,18 +5,15 @@
 # Date:   29.02.2024
 ###########################################
 */
-module CMP #(
+module CMP import vect_pkg::*; #(
     parameter DATA_WIDTH = 32
 )(
-    input                       module_clk_i,
-    input                       en_i,
-    input [DATA_WIDTH-1:0]      a_i,
-    input [DATA_WIDTH-1:0]      b_i,
-    input                       leq_i,
-    input                       tc_i,
-    output                      lt_le_o,
-    output                      ge_gt_o
-
+    input                               module_clk_i,
+    input                               en_i,
+    input           [DATA_WIDTH-1:0]    a_i,
+    input           [DATA_WIDTH-1:0]    b_i,
+    input           [6:0]               ocode_i,
+    output  logic   [DATA_WIDTH-1:0]    result_o
 );
 
 logic   [DATA_WIDTH-1:0]   a;
@@ -28,16 +25,50 @@ always_comb begin
     b = en_i ? b_i : '0;
 end
 
+logic                           com_tc;
+logic                           com_lt_le;
+logic                           com_ge_gt;
+logic                           com_leq;
+
+assign com_leq          =   (ocode_i inside {{VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}});
+assign com_tc           =   (ocode_i inside {{VMIN_VREDMIN, INT}, {VMINU_VREDMINU, INT}, {VMAX_VREDMAX, INT}, {VMAXU_VREDMAXU, INT}, {VMSEQ_VMANDNOT, INT}, {VMSNE_VMAND, INT}, {VMSLT_VMXOR, INT}, {VMSLTU_VMOR, INT}, {VMSLE_VMNAND, INT}, {VMSLEU_VMORNOT, INT}, {VMSGT_VMXNOR, INT}, {VMSGTU_VMNOR, INT}, {VMERGE_VCOMPRESS, INT}});
 
 DW01_cmp2 #(
     .width(DATA_WIDTH)
     ) CMP (
         .A(a), 
         .B(b), 
-        .LEQ(leq_i),
-        .TC(tc_i), 
-        .LT_LE(lt_le_o), 
-        .GE_GT(ge_gt_o)
+        .LEQ(com_leq),
+        .TC(com_tc), 
+        .LT_LE(com_lt_le), 
+        .GE_GT(com_ge_gt)
 );
+
+always_comb begin : CMP_SEL
+
+    case (ocode_i)
+        {VMIN_VREDMIN, INT},
+        {VMINU_VREDMINU, INT}, 
+        {VMAX_VREDMAX, INT},
+        {VMAXU_VREDMAXU, INT}   :   begin
+            result_o = ((com_lt_le & !com_ge_gt) ^ (ocode_i == VMAX_VREDMAX || ocode_i == VMAXU_VREDMAXU)) ? b : a;
+        end
+        {VMSEQ_VMANDNOT, INT},
+        {VMSNE_VMAND, INT}      :   begin
+            result_o = {DATA_WIDTH{(com_lt_le & com_ge_gt) ^ (ocode_i == VMSNE_VMAND)}};
+                   
+        end
+        {VMSLT_VMXOR, INT},
+        {VMSLTU_VMOR, INT}      :   begin
+            result_o = {DATA_WIDTH{com_lt_le}};
+        end
+        {VMSLE_VMNAND, INT},
+        {VMSLEU_VMORNOT, INT}   :   begin
+            result_o = {DATA_WIDTH{com_lt_le ^ ((ocode_i == VMSGT_VMXNOR) || (ocode_i == VMSGTU_VMNOR))}};
+        end
+        default                 :   
+            result_o = {DATA_WIDTH{com_lt_le}};           
+    endcase
+end
 
 endmodule

@@ -29,6 +29,9 @@ logic ad_res_inv;
 logic or_a_inv;
 logic or_res_inv;
 
+logic [DATA_WIDTH-1:0]  xor_result;
+logic [DATA_WIDTH-1:0]  ad_result;
+logic [DATA_WIDTH-1:0]  or_result;
 //assign clk_logic_e     =   (alu_oc inside {{VAND, INT}, {VMSNE_VMAND, MULT}, {VOR, INT}, {VMSLTU_VMOR, MULT}, {VXOR, INT}, {VMSLT_VMXOR, MULT}, {VMSLE_VMNAND, MULT}, {VMSEQ_VMANDNOT, MULT}, {VMSGTU_VMNOR, MULT}, {VMSLEU_VMORNOT, MULT}, {VMSGT_VMXNOR, MULT}});
 
 assign clk_xor_e = (ocode_i inside {{VXOR, INT}, {VMSLT_VMXOR, MULT}, {VMSGT_VMXNOR ,MULT}});
@@ -41,26 +44,19 @@ assign ad_res_inv = (ocode_i inside {{VMSLE_VMNAND, MULT}});
 assign or_a_inv    = (ocode_i inside {{VMSLEU_VMORNOT, MULT}});
 assign or_res_inv  = (ocode_i inside {{VMSGTU_VMNOR, MULT}});
 
-
-/*
-//Logical
-always_comb begin
-    unique case (ocode_i)
-        {VAND, INT},
-        {VMSNE_VMAND, MULT}     :   result_o = a_i & b_i;
-        {VOR, INT},
-        {VMSLTU_VMOR, MULT}     :   result_o = a_i | b_i;
-        {VXOR, INT},
-        {VMSLT_VMXOR, MULT}     :   result_o = a_i ^ b_i;
-        {VMSLE_VMNAND, MULT}    :   result_o = ~(a_i & b_i);
-        {VMSEQ_VMANDNOT, MULT}  :   result_o = ~a_i & b_i;
-        {VMSGTU_VMNOR, MULT}    :   result_o = ~(a_i | b_i);
-        {VMSLEU_VMORNOT, MULT}  :   result_o = ~a_i | b_i;
-        {VMSGT_VMXNOR, MULT}    :   result_o = ~(a_i ^ b_i);
-        default                 :   result_o = {DATA_WIDTH{1'b0}};
+always_comb begin : RES_MUX
+    case ({clk_xor_e, clk_ad_e, clk_or_e})
+        3'b100   :   
+            result_o = xor_result;
+        3'b010   :   
+            result_o = ad_result;
+        3'b001   :   
+            result_o = or_result; 
+        default: 
+            result_o = or_result;
     endcase
+end
 
-end*/
 
     XOR #(
         .DATA_WIDTH(DATA_WIDTH)
@@ -70,10 +66,10 @@ end*/
         .b_i(b_i),
         .e_i(clk_xor_e),
         .res_inv_i(xor_res_inv),
-        .result_o(result_o)
+        .result_o(xor_result)
     );
 
-    AND #(
+    AD #(
         .DATA_WIDTH(DATA_WIDTH)
     ) AND_GATE(
         .module_clk_i(module_clk_i),
@@ -82,7 +78,7 @@ end*/
         .e_i(clk_ad_e),
         .a_inv_i(ad_a_inv),
         .res_inv_i(ad_res_inv),
-        .result_o(result_o)
+        .result_o(ad_result)
     );
 
     OR #(
@@ -94,7 +90,7 @@ end*/
         .e_i(clk_or_e),
         .a_inv_i(or_a_inv),
         .res_inv_i(or_res_inv),
-        .result_o(result_o)
+        .result_o(or_result)
     );
 
 
