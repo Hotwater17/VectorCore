@@ -57,8 +57,10 @@ logic                       rf_rd_en;
 
 logic   [ADDR_B-1:0]        rf_rd_addr;
 
-logic   [DATA_WIDTH-1:0]    v_reg       [0:REG_NUM-1][0:LANES-1];
 logic   [DATA_WIDTH-1:0]    m_reg;
+
+logic   [DATA_WIDTH-1:0]    sram_q      [0:LANES-1];
+logic   [DATA_WIDTH-1:0]    mem_latch   [0:LANES-1];
 
 logic                       mask_wr_en;
 
@@ -134,70 +136,61 @@ always_latch begin : maskLatch
 end
 
 
-always_latch begin : rfLatch
-    if(!resetn_i) begin
-        v_reg[0][0] <= 0;   v_reg[0][1] <= 0;   v_reg[0][2] <= 0;   v_reg[0][3] <= 0;
-        v_reg[1][0] <= 0;   v_reg[1][1] <= 0;   v_reg[1][2] <= 0;   v_reg[1][3] <= 0;
-        v_reg[2][0] <= 0;   v_reg[2][1] <= 0;   v_reg[2][2] <= 0;   v_reg[2][3] <= 0;
-        v_reg[3][0] <= 0;   v_reg[3][1] <= 0;   v_reg[3][2] <= 0;   v_reg[3][3] <= 0;
-        v_reg[4][0] <= 0;   v_reg[4][1] <= 0;   v_reg[4][2] <= 0;   v_reg[4][3] <= 0;
-        v_reg[5][0] <= 0;   v_reg[5][1] <= 0;   v_reg[5][2] <= 0;   v_reg[5][3] <= 0;
-        v_reg[6][0] <= 0;   v_reg[6][1] <= 0;   v_reg[6][2] <= 0;   v_reg[6][3] <= 0;
-        v_reg[7][0] <= 0;   v_reg[7][1] <= 0;   v_reg[7][2] <= 0;   v_reg[7][3] <= 0;
-        v_reg[8][0] <= 0;   v_reg[8][1] <= 0;   v_reg[8][2] <= 0;   v_reg[8][3] <= 0;
-        v_reg[9][0] <= 0;   v_reg[9][1] <= 0;   v_reg[9][2] <= 0;   v_reg[9][3] <= 0;
-        v_reg[10][0] <= 0;  v_reg[10][1] <= 0;  v_reg[10][2] <= 0;  v_reg[10][3] <= 0;
-        v_reg[11][0] <= 0;  v_reg[11][1] <= 0;  v_reg[11][2] <= 0;  v_reg[11][3] <= 0;
-        v_reg[12][0] <= 0;  v_reg[12][1] <= 0;  v_reg[12][2] <= 0;  v_reg[12][3] <= 0;
-        v_reg[13][0] <= 0;  v_reg[13][1] <= 0;  v_reg[13][2] <= 0;  v_reg[13][3] <= 0;
-        v_reg[14][0] <= 0;  v_reg[14][1] <= 0;  v_reg[14][2] <= 0;  v_reg[14][3] <= 0;
-        v_reg[15][0] <= 0;  v_reg[15][1] <= 0;  v_reg[15][2] <= 0;  v_reg[15][3] <= 0;
-        v_reg[16][0] <= 0;  v_reg[16][1] <= 0;  v_reg[16][2] <= 0;  v_reg[16][3] <= 0;
-        v_reg[17][0] <= 0;  v_reg[17][1] <= 0;  v_reg[17][2] <= 0;  v_reg[17][3] <= 0;
-        v_reg[18][0] <= 0;  v_reg[18][1] <= 0;  v_reg[18][2] <= 0;  v_reg[18][3] <= 0;
-        v_reg[19][0] <= 0;  v_reg[19][1] <= 0;  v_reg[19][2] <= 0;  v_reg[19][3] <= 0;
-        v_reg[20][0] <= 0;  v_reg[20][1] <= 0;  v_reg[20][2] <= 0;  v_reg[20][3] <= 0;
-        v_reg[21][0] <= 0;  v_reg[21][1] <= 0;  v_reg[21][2] <= 0;  v_reg[21][3] <= 0;
-        v_reg[22][0] <= 0;  v_reg[22][1] <= 0;  v_reg[22][2] <= 0;  v_reg[22][3] <= 0;
-        v_reg[23][0] <= 0;  v_reg[23][1] <= 0;  v_reg[23][2] <= 0;  v_reg[23][3] <= 0;
-        v_reg[24][0] <= 0;  v_reg[24][1] <= 0;  v_reg[24][2] <= 0;  v_reg[24][3] <= 0;
-        v_reg[25][0] <= 0;  v_reg[25][1] <= 0;  v_reg[25][2] <= 0;  v_reg[25][3] <= 0;
-        v_reg[26][0] <= 0;  v_reg[26][1] <= 0;  v_reg[26][2] <= 0;  v_reg[26][3] <= 0;
-        v_reg[27][0] <= 0;  v_reg[27][1] <= 0;  v_reg[27][2] <= 0;  v_reg[27][3] <= 0;
-        v_reg[28][0] <= 0;  v_reg[28][1] <= 0;  v_reg[28][2] <= 0;  v_reg[28][3] <= 0;
-        v_reg[29][0] <= 0;  v_reg[29][1] <= 0;  v_reg[29][2] <= 0;  v_reg[29][3] <= 0;
-        v_reg[30][0] <= 0;  v_reg[30][1] <= 0;  v_reg[30][2] <= 0;  v_reg[30][3] <= 0;
-        v_reg[31][0] <= 0;  v_reg[31][1] <= 0;  v_reg[31][2] <= 0;  v_reg[31][3] <= 0;
 
-    end
-    else if(wr_en_i) v_reg[wr_addr_i][wr_elem_cnt_i] <= wdata_i;
-end
-    
 genvar iBank;
 
 generate
     for(iBank = 0; iBank < LANES; iBank = iBank + 1) begin : BANK
 
-
-        always_latch  begin : regLatch
-            if(!resetn_i) begin
-                a_reg[iBank]  <=  '0;
-                b_reg[iBank]  <=  '0;
-                c_reg[iBank]  <=  '0;
-            end
-            else begin
-                if(a_rd_en)   a_reg[iBank]  <=  v_reg[a_addr_i][iBank];
-                if(b_rd_en)   b_reg[iBank]  <=  v_reg[b_addr_i][iBank];
-                if(c_rd_en)   c_reg[iBank]  <=  v_reg[c_addr_i][iBank];
-            end
     
+//Instantiate 4 of these
+DW_ram_r_w_s_lat  #(
+    .data_width(DATA_WIDTH),
+    .depth(REG_NUM)
+) RAM_DW(
+    .clk(clk_i),
+    .cs_n(rf_wr_en[iBank]),
+    .wr_n(rf_wr_en[iBank]),
+    .rd_addr(rf_rd_addr),
+    .wr_addr(wr_addr_i),
+    .data_in(wdata_i), 
+    .data_out(sram_q[iBank])
+);
+
+
+
+    always_latch  begin : regLatch
+        if(!resetn_i) begin
+            a_reg[iBank]  <=  '0;
+            b_reg[iBank]  <=  '0;
+            c_reg[iBank]  <=  '0;
+        end
+        else begin
+            if(a_rd_en)   a_reg[iBank]  <=  sram_q[iBank];
+            if(b_rd_en)   b_reg[iBank]  <=  sram_q[iBank];
+            if(c_rd_en)   c_reg[iBank]  <=  sram_q[iBank];
         end
 
-        always_comb begin : wr_en
-            //Try changing this to also include next state == WR_EN
-            rf_wr_en[iBank]   =   !(wr_en_i && (wr_elem_cnt_i == iBank) && (wr_this_state == WR_EN));
-        end
+    end
 
+    always_latch begin : memLatch
+        if(!resetn_i)       mem_latch[iBank]   <=  '0;
+        else if(rf_rd_en)   mem_latch[iBank]   <=  sram_q[iBank];        
+    end
+
+    always_comb begin : wr_en
+        //Try changing this to also include next state == WR_EN
+        //rf_wr_en[iBank]   =   !(wr_en_i && (wr_elem_cnt_i == iBank) && (wr_this_state == WR_EN));
+        rf_wr_en[iBank]   =   !(wr_en_i && (wr_elem_cnt_i == iBank));
+    end
+/*
+    always_ff @(negedge clk_i or negedge resetn_i) begin : wr_en
+        //Try changing this to also include next state == WR_EN
+        //rf_wr_en[iBank]   =   !(wr_en_i && (wr_elem_cnt_i == iBank) && (wr_this_state == WR_EN));
+        if(!resetn_i) rf_wr_en[iBank]   <= '0;
+        else rf_wr_en[iBank]   <=   !(wr_en_i && (wr_elem_cnt_i == iBank));
+    end
+*/
     end
 endgenerate
 `ifdef SIM_TASKS
@@ -219,6 +212,7 @@ task show;   //{ USAGE: inst.show (low, high);
         $write("\n V%d \t", i);
          for(e = 0; e < ELEMS; e = e + 1)
             $write("%d \t", v_reg[i][e]);
+            
       end
 
       end
@@ -226,5 +220,8 @@ task show;   //{ USAGE: inst.show (low, high);
    end //}
 endtask //}
 `endif
+
+
+
 
 endmodule

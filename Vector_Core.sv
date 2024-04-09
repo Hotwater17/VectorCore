@@ -14,17 +14,17 @@ module Vector_Core import vect_pkg::*; #(
 )(
     input                           clk_i,
     input                           resetn_i,
-    input   [DATA_WIDTH-1:0]        vinstr_i,
-    input   [DATA_WIDTH-1:0]        rs1_i,
-    input   [DATA_WIDTH-1:0]        rs2_i,
+    input       [DATA_WIDTH-1:0]    vinstr_i,
+    input       [DATA_WIDTH-1:0]    rs1_i,
+    input       [DATA_WIDTH-1:0]    rs2_i,
     input                           vreq_i,
     output  reg                     vready_o,
     output                          v_iq_ack_o,
     output                          v_iq_full_o,
     output  reg                     v_lsu_active_o,
-    output  [DATA_WIDTH-1:0]        rd_o,
+    output      [DATA_WIDTH-1:0]    rd_o,
     output                          rd_wr_en_o,
-    output  [SBIT_CNT_B-1:0]        sbit_cnt_o [LANES-2:0],
+    output      [SBIT_CNT_B:0]      sbit_cnt_o      [LANES-2:0],
 
     output  reg [DATA_WIDTH-1:0]    haddr_o, 
     input       [DATA_WIDTH-1:0]    hrdata_i,
@@ -96,7 +96,7 @@ module Vector_Core import vect_pkg::*; #(
     logic                       ext_sldu_req        [0:LANES-1];
     logic                       ext_instr_save      [0:LANES-1];
 
-    logic   [SBIT_CNT_B-1:0]    lane_sbit_cnt       [0:LANES-1];
+    logic   [SBIT_CNT_B:0]      lane_sbit_cnt       [0:LANES-1];
     
 
     //Scalar operands registers
@@ -527,6 +527,62 @@ task showRF;   //{ USAGE: inst.show (low, high);
             $write(" %h ", genLane[3].LANE.RF.v_reg[i][e]);
                 //$write("a");      
          end
+
+      end
+
+      end
+      $write("\n");
+   end //}
+endtask //}
+`endif
+
+
+`ifdef SIM_TASKS_DW
+task showRF;   //{ USAGE: inst.show (low, high);
+   input [31:0] low, high;
+   integer i;
+   integer e;
+   integer l;
+   begin //{
+   $display ("\n%m: RF content dump");
+   if (low < 0 || low > high || high >= REG_NUM)
+      $display ("Error! Invalid address range (%0d, %0d).", low, high,
+                "\nUsage: %m (low, high);",
+                "\n       where low >= 0 and high <= %0d.", REG_NUM-1);
+   else
+      begin
+      $write ("VREG");
+      for(l = 0; l < LANES*ELEMS; l = l + 1) 
+        $write("E%d ", l);
+
+      for (i = low ; i <= high ; i = i + 1) begin
+        //$display ("%d\t%b", i, mem[i]);
+        $write("\n V%d", i);
+
+            $write(" %h ", genLane[0].LANE.RF.BANK[0].RAM_DW.mem[i]);
+            $write(" %h ", genLane[0].LANE.RF.BANK[1].RAM_DW.mem[i]);
+            $write(" %h ", genLane[0].LANE.RF.BANK[2].RAM_DW.mem[i]);
+            $write(" %h ", genLane[0].LANE.RF.BANK[3].RAM_DW.mem[i]);
+
+
+            $write(" %h ", genLane[1].LANE.RF.BANK[0].RAM_DW.mem[i]);
+            $write(" %h ", genLane[1].LANE.RF.BANK[1].RAM_DW.mem[i]);
+            $write(" %h ", genLane[1].LANE.RF.BANK[2].RAM_DW.mem[i]);
+            $write(" %h ", genLane[1].LANE.RF.BANK[3].RAM_DW.mem[i]);
+
+            $write(" %h ", genLane[2].LANE.RF.BANK[0].RAM_DW.mem[i]);
+            $write(" %h ", genLane[2].LANE.RF.BANK[1].RAM_DW.mem[i]);
+            $write(" %h ", genLane[2].LANE.RF.BANK[2].RAM_DW.mem[i]);
+            $write(" %h ", genLane[2].LANE.RF.BANK[3].RAM_DW.mem[i]);
+
+            $write(" %h ", genLane[3].LANE.RF.BANK[0].RAM_DW.mem[i]);
+            $write(" %h ", genLane[3].LANE.RF.BANK[1].RAM_DW.mem[i]);
+            $write(" %h ", genLane[3].LANE.RF.BANK[2].RAM_DW.mem[i]);
+            $write(" %h ", genLane[3].LANE.RF.BANK[3].RAM_DW.mem[i]);
+            //$write(" %h ", genLane[1].LANE.RF.BANK[e].RAM_DW.mem[i]);
+            //$write(" %h ", genLane[2].LANE.RF.BANK[e].RAM_DW.mem[i]);
+            //$write(" %h ", genLane[3].LANE.RF.BANK[e].RAM_DW.mem[i]);
+
 
       end
 

@@ -1,0 +1,47 @@
+/*
+###########################################
+# Title:  LOGIC.sv
+# Author: Michal Gorywoda
+# Date:   29.02.2024
+###########################################
+*/
+module LOGIC import vect_pkg::*; #(
+    parameter DATA_WIDTH = 32
+)(
+    input                               module_clk_i,
+    input                               en_i,
+    input           [DATA_WIDTH-1:0]    a_i,
+    input           [DATA_WIDTH-1:0]    b_i,
+    input           [6:0]               ocode_i,
+    output  logic   [DATA_WIDTH-1:0]    result_o
+
+);
+
+logic   [DATA_WIDTH-1:0]   a;
+logic   [DATA_WIDTH-1:0]   b;
+
+
+always_comb begin
+    a = en_i ? a_i : '0;
+    b = en_i ? b_i : '0;
+end
+
+//Logical
+always_comb begin
+    unique case (opode_i)
+        {VAND, INT},
+        {VMSNE_VMAND, MULT}     :   result_o = a & b;
+        {VOR, INT},
+        {VMSLTU_VMOR, MULT}     :   result_o = a | b;
+        {VXOR, INT},
+        {VMSLT_VMXOR, MULT}     :   result_o = a ^ b;
+        {VMSLE_VMNAND, MULT}    :   result_o = ~(a & b);
+        {VMSEQ_VMANDNOT, MULT}  :   result_o = ~a & b;
+        {VMSGTU_VMNOR, MULT}    :   result_o = ~(a | b);
+        {VMSLEU_VMORNOT, MULT}  :   result_o = ~a | b;
+        {VMSGT_VMXNOR, MULT}    :   result_o = ~(a ^ b);
+        default                 :   result_o = {DATA_WIDTH{1'b0}};
+    endcase
+
+end
+endmodule

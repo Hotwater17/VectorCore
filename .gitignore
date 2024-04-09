@@ -11,6 +11,7 @@ lane.sv
 testalu.sv
 controller.sv
 instr_issue.sv
+ALU_DW.sv.backup
 4Lanes/
 unused/
 ScalarOld/

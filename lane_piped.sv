@@ -1,8 +1,14 @@
+/*
+###########################################
+# Title:  lane_piped.sv
+# Author: Michal Gorywoda
+# Date:   29.02.2024
+###########################################
+*/
 module lane import vect_pkg::*; #(
     parameter DATA_WIDTH    =   32,
     parameter REG_NUM       =   32,
     parameter VLEN          =   512,
-    parameter LANE_NUM      =   0,
     parameter LANES         =   4,
     parameter ELEMS         =   VLEN/(DATA_WIDTH*LANES),
     parameter PIPE_ST       =   4,
@@ -21,7 +27,6 @@ module lane import vect_pkg::*; #(
     input                       resetn_i,
 
     //Change to parameter
-    //input   [ELEM_B-1:0]        lane_number_i,
     
     input                       instr_valid_i,
     input                       instr_req_i,
@@ -38,7 +43,7 @@ module lane import vect_pkg::*; #(
     input   [DATA_WIDTH-1:0]    rs1_rdata_i,
 
     //Writeback set bits output
-    output  [SBIT_CNT_B-1:0]    sbit_cnt_o,
+    output  [SBIT_CNT_B:0]      sbit_cnt_o,
 
     //Ext interface
     input                       lsu_ready_i,
@@ -385,9 +390,7 @@ module lane import vect_pkg::*; #(
 
 
 
-    /////##### Change it!!!!!!!!!!!!!!
-    //Change what!??!?!?!?
-    assign  vrf_reg_wr_en   =   wb_busy; //Lasts for all element cycles
+
     assign  vrf_wr_req      =   (ex_alu_ready && ~ex_is_ext) || ext_ready; //Set when ALU is ready - but one cycle later!
     assign  vrf_wr_ready    =   wb_pipe_ready; //Set at the last element
     
@@ -418,7 +421,10 @@ module lane import vect_pkg::*; #(
         .DATA_WIDTH(DATA_WIDTH),
         .SBIT_CNT_B(SBIT_CNT_B)
     ) VRF_BITS_CNT(
+        .clk_i(clk_i),
+        .resetn_i(resetn_i),
         .data_i(vrf_vd_wdata),
+        .enable_i(vrf_vd_wr_en),
         .sbit_cnt_o(sbit_cnt_o)
     );
 
@@ -522,11 +528,11 @@ ALU #(
     .clk_i(clk_i),
     .resetn_i(resetn_i),
     .valid_i(alu_valid),
-    .mask_en_i(alu_mask_en),
+    .mask_e_i(alu_mask_en),
     .a_i(alu_a),
     .b_i(alu_b),
     .c_i(alu_c),
-    .opcode_i({ex_instr_q.funct6, ex_alu_op_type}),
+    .ocode_i({ex_instr_q.funct6, ex_alu_op_type}),
     .alu_q_o(alu_result)
 );
 

@@ -1,6 +1,10 @@
-
-
-
+/*
+###########################################
+# Title:  vect_pkg.sv
+# Author: Michal Gorywoda
+# Date:   29.02.2024
+###########################################
+*/
 package vect_pkg;
 
 
@@ -136,7 +140,7 @@ localparam  VNMSUB      = 6'b101011;
 localparam  VMACC       = 6'b101101;
 localparam  VNMSAC      = 6'b101111;
 */
-localparam  INT     = 1'b0;
+localparam  INT   = 1'b0;
 localparam  MULT  = 1'b1;       
 
 

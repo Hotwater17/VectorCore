@@ -54,7 +54,7 @@ assign is_div       =   (alu_op inside {{VDIV, MULT}, {VDIVU, MULT}, {VREMU, MUL
 assign is_alu       =   !is_mul && !is_div;
 assign is_mac       =   (alu_op inside {{VSSRA_VNMSUB, MULT}, {VNSRA_VMACC, MULT}, {VNCLIP_VNMSAC, MULT}, {VSRA_VMADD, MULT}}); 
 
-//assign mul_raw_out   =   $signed({alu_a[DATA_WIDTH-1] & a_signed, alu_a}) * $signed({alu_b[DATA_WIDTH-1] & b_signed, alu_b});
+assign mul_raw_out   =   $signed({alu_a[DATA_WIDTH-1] & a_signed, alu_a}) * $signed({alu_b[DATA_WIDTH-1] & b_signed, alu_b});
 //assign div_quotient =   alu_a / alu_b;   
 //assign div_remainder=   alu_a % alu_b;
 
@@ -100,10 +100,7 @@ DW02_mult #
 	.PRODUCT(mul_raw_out) 
 );
 
-/*DW01_addsub #(
 
-)*/
-//DW01_cmp06
 always_comb begin : mulLogic
     //Inferred latch!!
     //Instead, create a separate case
